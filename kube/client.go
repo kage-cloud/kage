@@ -12,6 +12,7 @@ type Client interface {
 	WatchPods(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error)
 	UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	GetConfigMap(name string, opt kconfig.Opt) (*corev1.ConfigMap, error)
+	ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error)
 	DeleteConfigMap(name string, opt kconfig.Opt) error
 }
 
@@ -28,6 +29,25 @@ func NewClient() (Client, error) {
 
 type client struct {
 	Config kconfig.Config
+}
+
+func (c *client) ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error) {
+	api, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return err
+	}
+
+	cmList, err := api.CoreV1().ConfigMaps(opt.Namespace).List(lo)
+	if err != nil {
+		return nil, err
+	}
+
+	cms := make([]corev1.ConfigMap, len(cmList.Items))
+	for i, c := range cmList.Items {
+		cms[i] = c
+	}
+
+	return cms, nil
 }
 
 func (c *client) DeleteConfigMap(name string, opt kconfig.Opt) error {
