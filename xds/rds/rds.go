@@ -1,5 +1,0 @@
-package rds
-
-func rds() {
-
-}

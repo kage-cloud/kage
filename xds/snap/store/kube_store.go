@@ -35,6 +35,12 @@ type kubeStore struct {
 	KubeClient kube.Client
 }
 
+func (k *kubeStore) Delete(name string) error {
+	namespace := os.Getenv("NAMESPACE")
+
+	return k.KubeClient.DeleteConfigMap(name, kconfig.Opt{Namespace: namespace})
+}
+
 func (k *kubeStore) FetchAll() ([]EnvoyState, error) {
 	namespace := os.Getenv("NAMESPACE")
 
