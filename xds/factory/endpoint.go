@@ -1,4 +1,4 @@
-package eds
+package factory
 
 import (
 	"fmt"
@@ -8,12 +8,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+const EndpointFactoryKey = "EndpointFactory"
+
 type EndpointFactory interface {
 	FromEndpoints(endpoints *corev1.Endpoints) []endpoint.Endpoint
 }
 
 func NewEndpointFactory() EndpointFactory {
-	return &endpointFactory{}
+	return new(endpointFactory)
 }
 
 type endpointFactory struct {

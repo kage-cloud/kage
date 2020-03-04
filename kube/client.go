@@ -10,6 +10,7 @@ import (
 
 type Client interface {
 	WatchPods(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error)
+	WatchEndpoints(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error)
 	UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	GetConfigMap(name string, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error)
@@ -29,6 +30,14 @@ func NewClient() (Client, error) {
 
 type client struct {
 	Config kconfig.Config
+}
+
+func (c *client) WatchEndpoints(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error) {
+	inter, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return nil, err
+	}
+	return inter.CoreV1().Endpoints(opt.Namespace).Watch(lo)
 }
 
 func (c *client) ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error) {

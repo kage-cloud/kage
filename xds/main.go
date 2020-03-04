@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"github.com/eddieowens/kage/xds/snap"
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	xds "github.com/envoyproxy/go-control-plane/pkg/server"
 	"google.golang.org/grpc"
 	"net"
+	"os"
 )
 
 func main() {
@@ -15,14 +18,19 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 
-	lis, _ := net.Listen("tcp", ":8080")
+	xdsPort := os.Getenv("KAGE_XDS_PORT")
 
-	api.RegisterClusterDiscoveryServiceServer(grpcServer, server)
+	lis, _ := net.Listen("tcp", ":"+xdsPort)
+
 	api.RegisterEndpointDiscoveryServiceServer(grpcServer, server)
 	api.RegisterRouteDiscoveryServiceServer(grpcServer, server)
+	api.RegisterListenerDiscoveryServiceServer(grpcServer, server)
 
-	cache.NewResources()
-	cache.NewSnapshot()
+	var err error
+	SnapClient, err = snap.NewStoreClient()
+	if err != nil {
+		panic(err)
+	}
 
-	grpcServer.Serve(lis)
+	fmt.Println(grpcServer.Serve(lis))
 }

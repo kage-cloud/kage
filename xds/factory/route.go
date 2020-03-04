@@ -1,4 +1,4 @@
-package rds
+package factory
 
 import (
 	"fmt"
@@ -9,8 +9,14 @@ import (
 	"github.com/golang/protobuf/ptypes/wrappers"
 )
 
+const RouteFactoryKey = "RouteFactory"
+
 type RouteFactory interface {
 	FromPercentage(endpointName string, percentage uint32) []route.Route
+}
+
+func NewRouteFactory() RouteFactory {
+	return new(routeFactory)
 }
 
 type routeFactory struct {

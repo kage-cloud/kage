@@ -1,4 +1,4 @@
-package lds
+package factory
 
 import (
 	"fmt"
@@ -13,8 +13,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+const ListenerFactoryKey = "ListenerFactory"
+
 type ListenerFactory interface {
 	FromEndpoints(endpoints *corev1.Endpoints) []apiv2.Listener
+}
+
+func NewListenerFactory() ListenerFactory {
+	return new(listenerFactory)
 }
 
 type listenerFactory struct {
