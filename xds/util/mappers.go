@@ -17,3 +17,21 @@ func KubeProtocolToSocketAddressProtocol(protocol corev1.Protocol) (envcore.Sock
 	}
 	return -1, except.NewError("Unknown protocol", except.ErrUnsupported)
 }
+
+func ContainerPortsFromEndpoints(endpoints *corev1.Endpoints) []corev1.ContainerPort {
+	containerPorts := make([]corev1.ContainerPort, 0)
+	for _, ss := range endpoints.Subsets {
+		for _, port := range ss.Ports {
+			containerPorts = append(containerPorts, *ContainerPortFromEndpointPort(&port))
+		}
+	}
+	return containerPorts
+}
+
+func ContainerPortFromEndpointPort(port *corev1.EndpointPort) *corev1.ContainerPort {
+	return &corev1.ContainerPort{
+		Name:          port.Name,
+		ContainerPort: port.Port,
+		Protocol:      port.Protocol,
+	}
+}

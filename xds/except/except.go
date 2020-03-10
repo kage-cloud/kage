@@ -8,6 +8,7 @@ const (
 	ErrNotFound    ErrorReason = "NotFound"
 	ErrUnknown     ErrorReason = "Unknown"
 	ErrUnsupported ErrorReason = "Unsupported"
+	ErrTimeout     ErrorReason = "Timeout"
 )
 
 type kageError struct {

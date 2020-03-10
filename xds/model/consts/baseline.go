@@ -1,3 +1,6 @@
+package consts
+
+const BaselineConfig = `
 admin:
   access_log_path: /dev/null
   address:
@@ -52,3 +55,4 @@ static_resources:
             grpc_services:
               - envoy_grpc:
                   cluster_name: {{- .XdsClusterName}}
+`

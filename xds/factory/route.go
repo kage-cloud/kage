@@ -1,10 +1,9 @@
 package factory
 
 import (
-	"fmt"
-	envcore "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
+	"github.com/eddieowens/kage/xds/model"
+	"github.com/eddieowens/kage/xds/snap/snaputil"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
-	envtype "github.com/envoyproxy/go-control-plane/envoy/type"
 	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher"
 	"github.com/golang/protobuf/ptypes/wrappers"
 )
@@ -22,15 +21,15 @@ func NewRouteFactory() RouteFactory {
 type routeFactory struct {
 }
 
-func (r *routeFactory) FromPercentage(endpointName string, percentage uint32) []route.Route {
+func (r *routeFactory) FromPercentage(endpointsName string, percentage uint32) []route.Route {
 	var servicePercentage uint32
-	if percentage < 100 {
-		servicePercentage = 100 - percentage
+	if percentage < model.TotalRoutingWeight {
+		servicePercentage = model.TotalRoutingWeight - percentage
 	}
 
 	return []route.Route{
 		{
-			Name: fmt.Sprintf("%s-service", endpointName),
+			Name: snaputil.GenServiceName(endpointsName),
 			Match: &route.RouteMatch{
 				PathSpecifier: &route.RouteMatch_SafeRegex{
 					SafeRegex: &matcher.RegexMatcher{
@@ -40,12 +39,6 @@ func (r *routeFactory) FromPercentage(endpointName string, percentage uint32) []
 						Regex: ".*",
 					},
 				},
-				RuntimeFraction: &envcore.RuntimeFractionalPercent{
-					DefaultValue: &envtype.FractionalPercent{
-						Numerator:   servicePercentage,
-						Denominator: envtype.FractionalPercent_HUNDRED,
-					},
-				},
 			},
 			Action: &route.Route_Route{
 				Route: &route.RouteAction{
@@ -53,14 +46,15 @@ func (r *routeFactory) FromPercentage(endpointName string, percentage uint32) []
 						WeightedClusters: &route.WeightedCluster{
 							Clusters: []*route.WeightedCluster_ClusterWeight{
 								{
-									Name:   fmt.Sprintf("%s-service", endpointName),
+									Name:   snaputil.GenServiceName(endpointsName),
 									Weight: &wrappers.UInt32Value{Value: servicePercentage},
 								},
 								{
-									Name:   fmt.Sprintf("%s-canary", endpointName),
+									Name:   snaputil.GenCanaryName(endpointsName),
 									Weight: &wrappers.UInt32Value{Value: percentage},
 								},
 							},
+							TotalWeight: &wrappers.UInt32Value{Value: model.TotalRoutingWeight},
 						},
 					},
 				},

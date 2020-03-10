@@ -4,20 +4,18 @@ import (
 	"fmt"
 	"github.com/eddieowens/axon"
 	"github.com/eddieowens/kage/kube"
-	"github.com/eddieowens/kage/kube/kconfig"
 	"github.com/eddieowens/kage/xds/factory"
+	"github.com/eddieowens/kage/xds/model"
 	"github.com/eddieowens/kage/xds/snap"
 	"github.com/eddieowens/kage/xds/snap/store"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
 )
 
 const XdsWatcherKey = "XdsWatcher"
 
 type XdsWatcher interface {
-	WatchEndpoints(name string, opt kconfig.Opt) error
-	StopWatchingEndpoints(name string, opt kconfig.Opt)
+	WatchEndpoints(endpointNames []string, handlers ...model.EventHandler) error
 }
 
 type xdsWatcher struct {
@@ -25,42 +23,33 @@ type xdsWatcher struct {
 	EndpointFactory factory.EndpointFactory `inject:"EndpointFactory"`
 	ListenerFactory factory.ListenerFactory `inject:"ListenerFactory"`
 	StoreClient     snap.StoreClient        `inject:"StoreClient"`
-	watchers        map[string]watch.Interface
 }
 
-func (x *xdsWatcher) StopWatchingEndpoints(name string, opt kconfig.Opt) {
-	if wi, ok := x.watchers[x.genWatchersKey(name, opt.Namespace, "endpoints")]; ok {
-		wi.Stop()
-	}
-}
-
-func (x *xdsWatcher) WatchEndpoints(name string, opt kconfig.Opt) error {
-	lo := v1.ListOptions{
-		FieldSelector: fmt.Sprintf("metadata.name=%s", name),
-	}
-
-	wi, err := x.KubeClient.WatchEndpoints(lo, opt)
-	if err != nil {
-		return err
-	}
-
-	if _, ok := x.watchers[x.genWatchersKey(name, opt.Namespace, "endpoints")]; ok {
-		fmt.Println("Already watching endpoints", name, "in", opt.Namespace)
-		return nil
-	}
+func (x *xdsWatcher) WatchEndpoints(endpointNames []string, handlers ...model.EventHandler) error {
+	wi := x.KubeClient.InformEndpoints(func(object v1.Object) bool {
+		for _, s := range endpointNames {
+			if s == object.GetName() {
+				return true
+			}
+		}
+		return false
+	})
 
 	go func() {
-		for e := range wi.ResultChan() {
+		for e := range wi {
 			endpoints := e.Object.(*corev1.Endpoints)
 			ep := x.EndpointFactory.FromEndpoints(endpoints)
 			list := x.ListenerFactory.FromEndpoints(endpoints)
 			err := x.StoreClient.Set(&store.EnvoyState{
-				Name:      name,
+				Name:      endpoints.Name,
 				Listeners: list,
 				Endpoints: ep,
 			})
 			if err != nil {
-				fmt.Println("Failed to set from endpoint", name, ":", err.Error())
+				fmt.Println("Failed to set from endpoint", endpoints.Name, ":", err.Error())
+			}
+			for _, handler := range handlers {
+				handler(e)
 			}
 		}
 	}()
@@ -68,9 +57,7 @@ func (x *xdsWatcher) WatchEndpoints(name string, opt kconfig.Opt) error {
 }
 
 func xdsWatcherFactory(_ axon.Injector, _ axon.Args) axon.Instance {
-	return axon.StructPtr(&xdsWatcher{
-		watchers: make(map[string]watch.Interface),
-	})
+	return axon.StructPtr(&xdsWatcher{})
 }
 
 func (x *xdsWatcher) genWatchersKey(name, namespace, resource string) string {

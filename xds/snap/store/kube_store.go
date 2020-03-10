@@ -5,19 +5,10 @@ import (
 	"fmt"
 	"github.com/eddieowens/kage/kube"
 	"github.com/eddieowens/kage/kube/kconfig"
+	"github.com/eddieowens/kage/xds/model/consts"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
-)
-
-const (
-	LabelValueDomainKage       = "com.eddieowens.kage"
-	LabelValueResourceSnapshot = "snapshot"
-)
-
-const (
-	LabelKeyDomain   = "domain"
-	LabelKeyResource = LabelValueDomainKage + "/resource"
 )
 
 func NewKubeStore() (EnvoyStateStore, error) {
@@ -45,7 +36,7 @@ func (k *kubeStore) FetchAll() ([]EnvoyState, error) {
 	namespace := os.Getenv("NAMESPACE")
 
 	lo := metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", LabelKeyResource, LabelValueResourceSnapshot),
+		LabelSelector: fmt.Sprintf("%s=%s", consts.LabelKeyResource, consts.LabelValueResourceSnapshot),
 	}
 
 	cms, err := k.KubeClient.ListConfigMaps(lo, kconfig.Opt{Namespace: namespace})
@@ -79,8 +70,8 @@ func (k *kubeStore) Save(state *EnvoyState) (SaveHandler, error) {
 			Name:      state.Name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				LabelKeyDomain:   LabelValueDomainKage,
-				LabelKeyResource: LabelValueResourceSnapshot,
+				consts.LabelKeyDomain:   consts.Domain,
+				consts.LabelKeyResource: consts.LabelValueResourceSnapshot,
 			},
 		},
 		BinaryData: map[string][]byte{
