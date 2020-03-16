@@ -12,6 +12,7 @@ require (
 	google.golang.org/grpc v1.27.1
 	k8s.io/api v0.15.10
 	k8s.io/apimachinery v0.15.10
+	k8s.io/utils v0.0.0-20190801114015-581e00157fb1
 )
 
 replace github.com/eddieowens/kage => ../

@@ -11,5 +11,6 @@ func (p *Package) Bindings() []axon.Binding {
 		axon.Bind(EndpointFactoryKey).To().StructPtr(NewEndpointFactory()),
 		axon.Bind(RouteFactoryKey).To().StructPtr(NewRouteFactory()),
 		axon.Bind(KageMeshFactoryKey).To().StructPtr(new(kageMeshFactory)),
+		axon.Bind(CanaryFactoryKey).To().StructPtr(new(canaryFactory)),
 	}
 }

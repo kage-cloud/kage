@@ -2,7 +2,6 @@ package factory
 
 import (
 	"github.com/eddieowens/kage/xds/model"
-	"github.com/eddieowens/kage/xds/snap/snaputil"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
 	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher"
 	"github.com/golang/protobuf/ptypes/wrappers"
@@ -11,7 +10,7 @@ import (
 const RouteFactoryKey = "RouteFactory"
 
 type RouteFactory interface {
-	FromPercentage(endpointName string, percentage uint32) []route.Route
+	FromPercentage(canaryName, serviceName string, canaryPercentage, servicePercentage uint32) []route.Route
 }
 
 func NewRouteFactory() RouteFactory {
@@ -21,15 +20,10 @@ func NewRouteFactory() RouteFactory {
 type routeFactory struct {
 }
 
-func (r *routeFactory) FromPercentage(endpointsName string, percentage uint32) []route.Route {
-	var servicePercentage uint32
-	if percentage < model.TotalRoutingWeight {
-		servicePercentage = model.TotalRoutingWeight - percentage
-	}
-
+func (r *routeFactory) FromPercentage(canaryName, serviceName string, canaryPercentage, servicePercentage uint32) []route.Route {
 	return []route.Route{
 		{
-			Name: snaputil.GenServiceName(endpointsName),
+			Name: serviceName,
 			Match: &route.RouteMatch{
 				PathSpecifier: &route.RouteMatch_SafeRegex{
 					SafeRegex: &matcher.RegexMatcher{
@@ -46,12 +40,12 @@ func (r *routeFactory) FromPercentage(endpointsName string, percentage uint32) [
 						WeightedClusters: &route.WeightedCluster{
 							Clusters: []*route.WeightedCluster_ClusterWeight{
 								{
-									Name:   snaputil.GenServiceName(endpointsName),
+									Name:   serviceName,
 									Weight: &wrappers.UInt32Value{Value: servicePercentage},
 								},
 								{
-									Name:   snaputil.GenCanaryName(endpointsName),
-									Weight: &wrappers.UInt32Value{Value: percentage},
+									Name:   canaryName,
+									Weight: &wrappers.UInt32Value{Value: canaryPercentage},
 								},
 							},
 							TotalWeight: &wrappers.UInt32Value{Value: model.TotalRoutingWeight},

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"github.com/eddieowens/kage/kube"
 	"github.com/eddieowens/kage/kube/kconfig"
 	"github.com/eddieowens/kage/xds/factory"
@@ -9,12 +8,10 @@ import (
 	"github.com/eddieowens/kage/xds/model/consts"
 	"github.com/eddieowens/kage/xds/snap"
 	"github.com/eddieowens/kage/xds/util"
-	"github.com/eddieowens/kage/xds/watcher"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
-	"math"
 	"time"
 )
 
@@ -30,8 +27,9 @@ type kageMeshService struct {
 	StoreClient           snap.StoreClient        `inject:"StoreClient"`
 	EnvoyStateService     EnvoyStateService       `inject:"EnvoyStateService"`
 	KageMeshFactory       factory.KageMeshFactory `inject:"KageMeshFactory"`
-	XdsWatcher            watcher.XdsWatcher      `inject:"XdsWatcher"`
-	EndpointFinderService EndpointFinderService   `inject:"EndpointFinderService"`
+	XdsService            XdsService              `inject:"XdsService"`
+	EndpointFinderService KubeFinderService       `inject:"ServiceFinderService"`
+	LockdownService       LockdownService         `inject:"LockdownService"`
 }
 
 func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, error) {
@@ -41,21 +39,43 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
-	eps, err := k.EndpointFinderService.FindEndpoints(target, opt)
-	if err != nil {
-		return nil, err
-	}
-
 	baselineConfigMap := k.KageMeshFactory.BaselineConfigMap(spec.TargetDeployName, []byte(consts.BaselineConfig))
 	if _, err := k.KubeClient.UpsertConfigMap(baselineConfigMap, opt); err != nil {
 		return nil, err
 	}
 
-	kageMeshDeploy := k.KageMeshFactory.Deploy(
-		spec.TargetDeployName,
-		k.calcReplicasFromTraffic(target, spec.CanaryTrafficPercentage),
-		k.findMatchingContainerPorts(k.aggContainerPorts(target), eps),
-	)
+	kageMeshDeployName := util.GenKageMeshName(target.Name)
+
+	xdsHandler, err := k.XdsService.InitializeControlPlane(target)
+	if err != nil {
+		return nil, err
+	}
+
+	k.LockdownService.DeployPodsEventHandler(target)
+
+	// Possibly kill the canary if the target deployment is deleted?
+	wi := k.KubeClient.InformDeploy(func(object metav1.Object) bool {
+		return object.GetName() == kageMeshDeployName
+	})
+
+	go func() {
+		for r := range wi {
+			if r.Type == watch.Deleted {
+				// TODO: something after the kage mesh deploy is deleted.
+				//fmt.Println("Kage mesh", kageMeshDeployName, "was deleted. Rolling back service", targetDeployName)
+				break
+			}
+		}
+	}()
+
+	containerPorts := make([]corev1.ContainerPort, 0)
+	for _, cont := range target.Spec.Template.Spec.Containers {
+		for _, cp := range cont.Ports {
+			containerPorts = append(containerPorts, cp)
+		}
+	}
+
+	kageMeshDeploy := k.KageMeshFactory.Deploy(kageMeshDeployName, spec.TargetDeployName, containerPorts, target.Labels, target.Spec.Template.Labels)
 
 	kageMeshDeploy, err = k.KubeClient.UpsertDeploy(kageMeshDeploy, opt)
 	if err != nil {
@@ -69,35 +89,12 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
-	endpointNames := make([]string, len(eps))
-	for i, ep := range eps {
-		endpointNames[i] = ep.Name
-	}
-	if err := k.XdsWatcher.WatchEndpoints(endpointNames); err != nil {
-		return nil, err
-	}
-
-	lo := metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("metadata.name=%s", kageMeshDeploy.Name),
-	}
-	wi, err := k.KubeClient.InformDeploy(lo, opt)
-	if err != nil {
-		_ = k.KubeClient.DeleteConfigMap(baselineConfigMap.Name, opt)
-		_ = k.KubeClient.DeleteDeploy(kageMeshDeploy.Name, opt)
-		fmt.Println("Failed to watch the kage mesh deploy")
-		return nil, err
-	}
-
-	go func() {
-		for {
-			r := <-wi.ResultChan()
-			if r.Type == watch.Deleted {
-				fmt.Println("Kage mesh", kageMeshDeploy.Name, "was deleted. Rolling back service", targetDeployName)
-
-				break
-			}
-		}
-	}()
+	return &model.KageMesh{
+		Name:                     kageMeshDeployName,
+		Deploy:                   kageMeshDeploy,
+		CanaryTrafficPercentage:  0,
+		ServiceTrafficPercentage: model.TotalRoutingWeight,
+	}, nil
 }
 
 // Extract all ContainerPorts from Endpoints in eps which will route to ContainerPorts in toMatch.
@@ -116,7 +113,7 @@ func (k *kageMeshService) findMatchingContainerPorts(toMatch []corev1.ContainerP
 		for _, ss := range ep.Subsets {
 			for _, p := range ss.Ports {
 				if _, ok := toMatchByPort[p.Port]; ok {
-					cps = append(cps, *util.ContainerPortFromEndpointPort(p))
+					cps = append(cps, *util.ContainerPortFromEndpointPort(&p))
 				}
 			}
 		}
@@ -133,12 +130,6 @@ func (k *kageMeshService) aggContainerPorts(dep *appsv1.Deployment) []corev1.Con
 		}
 	}
 	return cps
-}
-
-func (k *kageMeshService) calcReplicasFromTraffic(target *appsv1.Deployment, trafficPercentage int32) int32 {
-	reps := *target.Spec.Replicas
-	percentReps := float32(reps) * (float32(trafficPercentage) / float32(model.TotalRoutingWeight))
-	return int32(math.Ceil(float64(percentReps)))
 }
 
 func (k *kageMeshService) Fetch(endpointsName string, opt kconfig.Opt) (*model.KageMesh, error) {

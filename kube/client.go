@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/informers"
@@ -17,15 +18,18 @@ import (
 )
 
 type Client interface {
-	InformEndpoints(filter Filter) <-chan watch.Event
+	InformAndListServices(filter Filter) ([]corev1.Service, <-chan watch.Event)
+	InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event)
 	InformDeploy(filter Filter) <-chan watch.Event
 	WatchDeploy(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error)
 	WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error
 	GetConfigMap(name string, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error)
+	ListEndpoints(labelSelector string, opt kconfig.Opt) ([]corev1.Endpoints, error)
 	DeleteConfigMap(name string, opt kconfig.Opt) error
 	UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	UpsertDeploy(dep *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
+	UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error)
 	DeleteDeploy(name string, opt kconfig.Opt) error
 	GetDeploy(name string, opt kconfig.Opt) (*appsv1.Deployment, error)
 	GetEndpoints(name string, opt kconfig.Opt) (*corev1.Endpoints, error)
@@ -62,14 +66,77 @@ type client struct {
 	mapLock                    sync.RWMutex
 }
 
-func (c *client) InformEndpoints(filter Filter) <-chan watch.Event {
+func (c *client) UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error) {
+	inter, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return nil, err
+	}
+	return inter.CoreV1().Pods(opt.Namespace).Update(pod)
+}
+
+func (c *client) InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event) {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
 		object, b = obj.(*corev1.Endpoints)
 		return
 	})
-	c.SharedInformerFactory.Core().V1().Endpoints().Informer().AddEventHandler(handler)
-	c.initInformer("endpoints", c.SharedInformerFactory.Core().V1().Endpoints().Informer())
-	return ch
+	informer := c.SharedInformerFactory.Core().V1().Pods().Informer()
+	informer.AddEventHandler(handler)
+	c.initInformer("pods", informer)
+	c.waitForSync(informer)
+	eps, _ := c.SharedInformerFactory.Core().V1().Pods().Lister().List(labels.NewSelector())
+	result := make([]corev1.Pod, 0)
+	for _, e := range eps {
+		if filter(e) {
+			result = append(result, *e)
+		}
+	}
+	return result, ch
+}
+
+func (c *client) ListEndpoints(labelSelector string, opt kconfig.Opt) ([]corev1.Endpoints, error) {
+	if c.informerRunning("endpoints") {
+		parsedLabelSelector, err := labels.Parse(labelSelector)
+		if err != nil {
+			return nil, err
+		}
+		eps, err := c.SharedInformerFactory.Core().V1().Endpoints().Lister().Endpoints(opt.Namespace).List(parsedLabelSelector)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]corev1.Endpoints, len(eps))
+		for i, e := range eps {
+			result[i] = *e
+		}
+		return result, nil
+	}
+	inter, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return nil, err
+	}
+	items, err := inter.CoreV1().Endpoints(opt.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (c *client) InformAndListServices(filter Filter) ([]corev1.Service, <-chan watch.Event) {
+	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
+		object, b = obj.(*corev1.Service)
+		return
+	})
+	informer := c.SharedInformerFactory.Core().V1().Services().Informer()
+	informer.AddEventHandler(handler)
+	c.initInformer("service", informer)
+	c.waitForSync(informer)
+	eps, _ := c.SharedInformerFactory.Core().V1().Services().Lister().List(labels.NewSelector())
+	result := make([]corev1.Service, 0)
+	for _, e := range eps {
+		if filter(e) {
+			result = append(result, *e)
+		}
+	}
+	return result, ch
 }
 
 func (c *client) InformDeploy(filter Filter) <-chan watch.Event {
@@ -77,8 +144,10 @@ func (c *client) InformDeploy(filter Filter) <-chan watch.Event {
 		object, b = obj.(*appsv1.Deployment)
 		return
 	})
-	c.SharedInformerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
-	c.initInformer("deployment", c.SharedInformerFactory.Core().V1().Endpoints().Informer())
+	informer := c.SharedInformerFactory.Apps().V1().Deployments().Informer()
+	informer.AddEventHandler(handler)
+	c.initInformer("deployment", informer)
+	c.waitForSync(informer)
 	return ch
 }
 
@@ -155,6 +224,9 @@ func (c *client) WaitTillDeployReady(name string, timeout time.Duration, opt kco
 }
 
 func (c *client) GetEndpoints(name string, opt kconfig.Opt) (*corev1.Endpoints, error) {
+	if c.informerRunning("endpoints") {
+		return c.SharedInformerFactory.Core().V1().Endpoints().Lister().Endpoints(opt.Namespace).Get(name)
+	}
 	inter, err := c.Config.Api(opt.Context)
 	if err != nil {
 		return nil, err
@@ -310,4 +382,17 @@ func (c *client) initInformer(resource string, informer cache.SharedIndexInforme
 		informer.Run(ch)
 		return
 	}
+}
+
+func (c *client) waitForSync(informer cache.SharedIndexInformer) {
+	cache.WaitForCacheSync(make(chan struct{}), func() bool {
+		return informer.HasSynced()
+	})
+}
+
+func (c *client) informerRunning(resource string) bool {
+	c.mapLock.RLock()
+	defer c.mapLock.RUnlock()
+	_, ok := c.informerHandlersByResource[resource]
+	return ok
 }

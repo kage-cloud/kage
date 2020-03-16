@@ -1,38 +1,22 @@
 package service
 
 import (
-	"fmt"
 	"github.com/eddieowens/kage/kube"
-	"github.com/eddieowens/kage/kube/kconfig"
-	"github.com/eddieowens/kage/xds/model"
-	"github.com/eddieowens/kage/xds/snap"
+	"github.com/eddieowens/kage/xds/factory"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 const CanaryServiceKey = "CanaryService"
 
 type CanaryService interface {
-	GenCanaryName(name, version string) string
-	Fetch(name string, opt kconfig.Opt) (*model.Canary, error)
-	IsCanaried(name string, opt kconfig.Opt) bool
+	Canary(deployment *appsv1.Deployment) (*appsv1.Deployment, error)
 }
 
 type canaryService struct {
-	KubeClient      kube.Client      `inject:"KubeClient"`
-	StoreClient     snap.StoreClient `inject:"StoreClient"`
-	KageMeshService KageMeshService  `inject:"KageMeshService"`
+	KubeClient    kube.Client           `inject:"KubeClient"`
+	CanaryFactory factory.CanaryFactory `inject:"CanaryFactory"`
 }
 
-func (c *canaryService) IsCanaried(name string, opt kconfig.Opt) bool {
-	c.KubeClient.GetDeploy()
-}
+func (c *canaryService) Canary(deployment *appsv1.Deployment) (*appsv1.Deployment, error) {
 
-func (c *canaryService) GenCanaryName(name, version string) string {
-	return fmt.Sprintf("%s-%s", name, version)
-}
-
-func (c *canaryService) Fetch(name string, opt kconfig.Opt) (*model.Canary, error) {
-	dep, err := c.KubeClient.GetDeploy(name, opt)
-	if err != nil {
-		return nil, err
-	}
 }
