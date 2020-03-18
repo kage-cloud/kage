@@ -67,7 +67,7 @@ func (k *kubeStore) Save(state *EnvoyState) (SaveHandler, error) {
 
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      state.Name,
+			Name:      state.NodeId,
 			Namespace: namespace,
 			Labels: map[string]string{
 				consts.LabelKeyDomain:   consts.Domain,
@@ -75,7 +75,7 @@ func (k *kubeStore) Save(state *EnvoyState) (SaveHandler, error) {
 			},
 		},
 		BinaryData: map[string][]byte{
-			state.Name: b,
+			state.NodeId: b,
 		},
 	}
 

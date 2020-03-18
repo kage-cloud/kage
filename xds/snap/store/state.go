@@ -8,7 +8,10 @@ import (
 
 type EnvoyState struct {
 	// The NodeID in the Envoy configuration. Required.
-	Name string `json:"name"`
+	NodeId string `json:"node_id"`
+
+	// A unique version delegated to every single Envoy State.
+	UuidVersion string `json:"uuid_version"`
 
 	// The Envoy Listener definitions for the Envoy config. Required. See
 	// https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/listener.proto for more details.

@@ -21,7 +21,7 @@ type trafficControllerService struct {
 func (t *trafficControllerService) Direct(req *exchange.DirectTrafficRequest) (*exchange.DirectTrafficResponse, error) {
 	routes := t.RouteFactory.FromPercentage("", req.EndpointName, req.Percentage, 0)
 	err := t.StoreClient.Set(&store.EnvoyState{
-		Name:   req.EndpointName,
+		NodeId: req.EndpointName,
 		Routes: routes,
 	})
 	if err != nil {

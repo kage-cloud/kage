@@ -8,10 +8,12 @@ const (
 )
 
 const (
-	LabelKeyDomain   = "domain"
-	LabelKeyResource = Domain + "/resource"
+	LabelKeyDomain     = "domain"
+	LabelKeyResource   = Domain + "/resource"
+	LabelKeyLockedDown = Domain + "/locked-down"
+	LabelKeyFor        = Domain + "/for"
 )
 
 const (
-	LabelKeyFor = Domain + "/for"
+	AnnotationKeyLockdown = Domain + "/lockdown"
 )

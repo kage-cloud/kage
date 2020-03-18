@@ -19,7 +19,7 @@ import (
 const XdsEventHandlerService = "XdsEventHandlerService"
 
 type XdsEventHandler interface {
-	EventHandler(deploy *appsv1.Deployment) model.InformEventHandler
+	DeployPodsEventHandler(deploy *appsv1.Deployment) model.InformEventHandler
 }
 
 type xdsWatcher struct {
@@ -29,7 +29,7 @@ type xdsWatcher struct {
 	StoreClient     snap.StoreClient        `inject:"StoreClient"`
 }
 
-func (x *xdsWatcher) EventHandler(deploy *appsv1.Deployment) model.InformEventHandler {
+func (x *xdsWatcher) DeployPodsEventHandler(deploy *appsv1.Deployment) model.InformEventHandler {
 	return &model.InformEventHandlerFuncs{
 		OnWatch: x.onWatch(deploy),
 		OnList:  x.onList(deploy),
@@ -78,7 +78,7 @@ func (x *xdsWatcher) storePod(name string, pod *corev1.Pod) error {
 		}
 	}
 	err := x.StoreClient.Set(&store.EnvoyState{
-		Name:      name,
+		NodeId:    name,
 		Listeners: listeners,
 		Endpoints: endpoints,
 	})

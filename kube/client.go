@@ -20,6 +20,7 @@ import (
 type Client interface {
 	InformAndListServices(filter Filter) ([]corev1.Service, <-chan watch.Event)
 	InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event)
+	InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event)
 	InformDeploy(filter Filter) <-chan watch.Event
 	WatchDeploy(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error)
 	WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error
@@ -30,6 +31,7 @@ type Client interface {
 	UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	UpsertDeploy(dep *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
 	UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error)
+	UpdateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
 	DeleteDeploy(name string, opt kconfig.Opt) error
 	GetDeploy(name string, opt kconfig.Opt) (*appsv1.Deployment, error)
 	GetEndpoints(name string, opt kconfig.Opt) (*corev1.Endpoints, error)
@@ -66,6 +68,33 @@ type client struct {
 	mapLock                    sync.RWMutex
 }
 
+func (c *client) InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event) {
+	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
+		object, b = obj.(*corev1.ConfigMap)
+		return
+	})
+	informer := c.SharedInformerFactory.Core().V1().ConfigMaps().Informer()
+	informer.AddEventHandler(handler)
+	c.initInformer("configmap", informer)
+	c.waitForSync(informer)
+	eps, _ := c.SharedInformerFactory.Core().V1().ConfigMaps().Lister().List(labels.NewSelector())
+	result := make([]corev1.ConfigMap, 0)
+	for _, e := range eps {
+		if filter(e) {
+			result = append(result, *e)
+		}
+	}
+	return result, ch
+}
+
+func (c *client) UpdateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error) {
+	inter, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return nil, err
+	}
+	return inter.AppsV1().Deployments(opt.Namespace).Update(deploy)
+}
+
 func (c *client) UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error) {
 	inter, err := c.Config.Api(opt.Context)
 	if err != nil {
@@ -76,7 +105,7 @@ func (c *client) UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error
 
 func (c *client) InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event) {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
-		object, b = obj.(*corev1.Endpoints)
+		object, b = obj.(*corev1.Pod)
 		return
 	})
 	informer := c.SharedInformerFactory.Core().V1().Pods().Informer()

@@ -27,9 +27,7 @@ type kageMeshService struct {
 	StoreClient           snap.StoreClient        `inject:"StoreClient"`
 	EnvoyStateService     EnvoyStateService       `inject:"EnvoyStateService"`
 	KageMeshFactory       factory.KageMeshFactory `inject:"KageMeshFactory"`
-	XdsService            XdsService              `inject:"XdsService"`
-	EndpointFinderService KubeFinderService       `inject:"ServiceFinderService"`
-	LockdownService       LockdownService         `inject:"LockdownService"`
+	KageMeshDaemonService KageMeshDaemonService   `inject:"KageMeshDaemonService"`
 }
 
 func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, error) {
@@ -39,19 +37,16 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
+	if err := k.KageMeshDaemonService.Start(target); err != nil {
+		return nil, err
+	}
+
 	baselineConfigMap := k.KageMeshFactory.BaselineConfigMap(spec.TargetDeployName, []byte(consts.BaselineConfig))
 	if _, err := k.KubeClient.UpsertConfigMap(baselineConfigMap, opt); err != nil {
 		return nil, err
 	}
 
 	kageMeshDeployName := util.GenKageMeshName(target.Name)
-
-	xdsHandler, err := k.XdsService.InitializeControlPlane(target)
-	if err != nil {
-		return nil, err
-	}
-
-	k.LockdownService.DeployPodsEventHandler(target)
 
 	// Possibly kill the canary if the target deployment is deleted?
 	wi := k.KubeClient.InformDeploy(func(object metav1.Object) bool {

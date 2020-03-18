@@ -35,5 +35,5 @@ func (e *envoystateService) FetchCanaryRouteWeight(state *store.EnvoyState) (uin
 			}
 		}
 	}
-	return 0, except.NewError("No canary routes found for %s", except.ErrNotFound, state.Name)
+	return 0, except.NewError("No canary routes found for %s", except.ErrNotFound, state.NodeId)
 }

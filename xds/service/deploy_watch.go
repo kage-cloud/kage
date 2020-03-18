@@ -10,16 +10,18 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-type WatchService interface {
+const DeployWatchServiceKey = "DeployWatchService"
+
+type DeployWatchService interface {
 	DeploymentPods(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error
 	DeploymentServices(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error
 }
 
-type watchService struct {
+type deployWatchService struct {
 	KubeClient kube.Client `inject:"KubeClient"`
 }
 
-func (w *watchService) DeploymentServices(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error {
+func (w *deployWatchService) DeploymentServices(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error {
 	ns := kubeutil.DeploymentPodNamespace(deploy)
 
 	svcs, wi := w.KubeClient.InformAndListServices(func(object metav1.Object) bool {
@@ -49,7 +51,7 @@ func (w *watchService) DeploymentServices(deploy *appsv1.Deployment, eventHandle
 	return nil
 }
 
-func (w *watchService) DeploymentPods(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error {
+func (w *deployWatchService) DeploymentPods(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error {
 	selector, err := metav1.LabelSelectorAsSelector(deploy.Spec.Selector)
 	if err != nil {
 		return err

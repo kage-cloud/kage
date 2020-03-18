@@ -29,6 +29,9 @@ type StoreClient interface {
 
 	// Loads the entirety of the EnvoyState from the persistent Store into the StoreClient.
 	Load() error
+
+	// Reload a singular Node ID from the persistent store.
+	Reload(nodeId string) error
 }
 
 type storeClient struct {
@@ -41,7 +44,48 @@ type storeClient struct {
 	// EnvoyStates indexed by the node ID.
 	CurrentStates map[string]store.EnvoyState
 
+	syncChan chan string
+
 	lock sync.RWMutex
+}
+
+func (s *storeClient) Reload(nodeId string) error {
+	state, err := s.Store.Fetch(nodeId)
+	if err != nil {
+		return err
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	currentState, _ := s.get(nodeId)
+
+	if currentState != nil && state.UuidVersion == currentState.UuidVersion {
+		return nil
+	}
+
+	return s.set(state)
+}
+
+func (s *storeClient) Stop() {
+	close(s.syncChan)
+}
+
+func (s *storeClient) Start() error {
+	s.syncChan = make(chan string)
+	go func() {
+		for nodeId := range s.syncChan {
+			if err := s.Reload(nodeId); err != nil {
+				fmt.Println("Failed to reload", nodeId, ":", err.Error())
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (s *storeClient) Sync(nodeId string) error {
+	s.syncChan <- nodeId
+	return nil
 }
 
 func (s *storeClient) Delete(nodeId string) error {
@@ -69,7 +113,7 @@ func (s *storeClient) Load() error {
 	defer s.lock.Unlock()
 
 	for _, state := range states {
-		if err := s.Set(&state); err != nil {
+		if err := s.set(&state); err != nil {
 			return err
 		}
 	}
@@ -94,16 +138,21 @@ func (s *storeClient) get(nodeId string) (*store.EnvoyState, error) {
 func (s *storeClient) Set(state *store.EnvoyState) error {
 	s.lock.Lock()
 	s.lock.Unlock()
-	prevState, _ := s.get(state.Name)
+	return s.set(state)
+}
+
+func (s *storeClient) set(state *store.EnvoyState) error {
+	prevState, _ := s.get(state.NodeId)
 	routes, routeResources := s.routes(prevState, state.Routes)
 	listeners, listenerResources := s.listeners(prevState, state.Listeners)
 	endpoints, endpointResources := s.endpoints(prevState, state.Endpoints)
 
 	compositeState := &store.EnvoyState{
-		Name:      state.Name,
-		Listeners: listeners,
-		Routes:    routes,
-		Endpoints: endpoints,
+		NodeId:      state.NodeId,
+		UuidVersion: uuid.New().String(),
+		Listeners:   listeners,
+		Routes:      routes,
+		Endpoints:   endpoints,
 	}
 
 	handler, err := s.Store.Save(compositeState)
@@ -111,8 +160,8 @@ func (s *storeClient) Set(state *store.EnvoyState) error {
 		return err
 	}
 
-	if err := s.Cache.SetSnapshot(state.Name, cache.NewSnapshot(
-		uuid.New().String(),
+	if err := s.Cache.SetSnapshot(state.NodeId, cache.NewSnapshot(
+		compositeState.UuidVersion,
 		endpointResources,
 		nil,
 		routeResources,
@@ -123,7 +172,7 @@ func (s *storeClient) Set(state *store.EnvoyState) error {
 		return err
 	}
 
-	s.CurrentStates[state.Name] = *compositeState
+	s.CurrentStates[state.NodeId] = *compositeState
 
 	return nil
 }

@@ -22,7 +22,7 @@ type xdsService struct {
 }
 
 func (x *xdsService) InitializeControlPlane(deploy *appsv1.Deployment) (model.InformEventHandler, error) {
-	handler := x.XdsEventHandler.EventHandler(deploy)
+	handler := x.XdsEventHandler.DeployPodsEventHandler(deploy)
 
 	canaryName := snaputil.GenCanaryName(deploy.Name)
 	serviceName := snaputil.GenServiceName(deploy.Name)
