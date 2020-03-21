@@ -13,18 +13,18 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 )
 
-const ConfigMapSyncServiceKey = "StateSyncService"
+const StateSyncServiceKey = "StateSyncService"
 
 type StateSyncService interface {
 	Start() (synchelpers.Stopper, error)
 }
 
-type configMapSyncService struct {
+type stateSyncService struct {
 	KubeClient  kube.Client      `inject:"KubeClient"`
 	StoreClient snap.StoreClient `inject:"StoreClient"`
 }
 
-func (c *configMapSyncService) Start() (synchelpers.Stopper, error) {
+func (c *stateSyncService) Start() (synchelpers.Stopper, error) {
 	selector := labels.SelectorFromSet(map[string]string{
 		consts.LabelKeyResource: consts.LabelValueResourceSnapshot,
 	})

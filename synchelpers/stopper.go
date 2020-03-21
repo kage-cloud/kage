@@ -12,6 +12,17 @@ func NewStopper(onStop OnStopFunc) Stopper {
 	}
 }
 
+func NewErrChanStopper(stopFunc OnStopFunc) (Stopper, chan error) {
+	errChan := make(chan error)
+	stop := NewStopper(func(err error) {
+		if stopFunc != nil {
+			stopFunc(err)
+		}
+		errChan <- err
+	})
+	return stop, errChan
+}
+
 type stopper struct {
 	onStop OnStopFunc
 }

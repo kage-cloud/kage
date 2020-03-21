@@ -5,10 +5,11 @@ import "fmt"
 type ErrorReason string
 
 const (
-	ErrNotFound    ErrorReason = "NotFound"
-	ErrUnknown     ErrorReason = "Unknown"
-	ErrUnsupported ErrorReason = "Unsupported"
-	ErrTimeout     ErrorReason = "Timeout"
+	ErrNotFound      ErrorReason = "NotFound"
+	ErrUnknown       ErrorReason = "Unknown"
+	ErrUnsupported   ErrorReason = "Unsupported"
+	ErrAlreadyExists ErrorReason = "AlreadyExists"
+	ErrTimeout       ErrorReason = "Timeout"
 )
 
 type kageError struct {

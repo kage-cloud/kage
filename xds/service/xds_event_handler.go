@@ -8,6 +8,7 @@ import (
 	"github.com/eddieowens/kage/xds/snap"
 	"github.com/eddieowens/kage/xds/snap/store"
 	"github.com/eddieowens/kage/xds/util"
+	"github.com/eddieowens/kage/xds/util/kubeutil"
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	appsv1 "k8s.io/api/apps/v1"
@@ -40,7 +41,7 @@ func (x *xdsWatcher) onList(deploy *appsv1.Deployment) model.OnListEventFunc {
 	return func(obj runtime.Object) error {
 		if v, ok := obj.(*corev1.PodList); ok {
 			for _, p := range v.Items {
-				if err := x.storePod(deploy.Name, &p); err != nil {
+				if err := x.storePod(kubeutil.ObjectKey(deploy), &p); err != nil {
 					return err
 				}
 			}
@@ -52,14 +53,14 @@ func (x *xdsWatcher) onList(deploy *appsv1.Deployment) model.OnListEventFunc {
 func (x *xdsWatcher) onWatch(deploy *appsv1.Deployment) model.OnWatchEventFunc {
 	return func(event watch.Event) {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
-			if err := x.storePod(deploy.Name, pod); err != nil {
+			if err := x.storePod(kubeutil.ObjectKey(deploy), pod); err != nil {
 				fmt.Println("Failed to set from pod", pod.Name, ":", err.Error())
 			}
 		}
 	}
 }
 
-func (x *xdsWatcher) storePod(name string, pod *corev1.Pod) error {
+func (x *xdsWatcher) storePod(key string, pod *corev1.Pod) error {
 	endpoints := make([]envoy_api_v2_endpoint.Endpoint, 0)
 	listeners := make([]api.Listener, 0)
 	for _, c := range pod.Spec.Containers {
@@ -68,7 +69,7 @@ func (x *xdsWatcher) storePod(name string, pod *corev1.Pod) error {
 			if err != nil {
 				fmt.Println("Skipping container", c.Name, "for pod", pod.Name, "in namespace", pod.Namespace, "as its protocol is not supported")
 			}
-			listener, err := x.ListenerFactory.Listener(name, uint32(cp.ContainerPort), proto)
+			listener, err := x.ListenerFactory.Listener(key, uint32(cp.ContainerPort), proto)
 			if err != nil {
 				return err
 			}
@@ -78,7 +79,7 @@ func (x *xdsWatcher) storePod(name string, pod *corev1.Pod) error {
 		}
 	}
 	err := x.StoreClient.Set(&store.EnvoyState{
-		NodeId:    name,
+		NodeId:    key,
 		Listeners: listeners,
 		Endpoints: endpoints,
 	})

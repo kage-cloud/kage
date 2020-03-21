@@ -5,8 +5,8 @@ import (
 	"github.com/eddieowens/kage/xds/model/consts"
 )
 
-func GenKageMeshName(endpointsName string) string {
-	return fmt.Sprintf("%s-kage-mesh", endpointsName)
+func GenKageMeshName(targetDeployName string) string {
+	return fmt.Sprintf("%s-kage-mesh", targetDeployName)
 }
 
 func AppendKageLabels(labels map[string]string) {

@@ -34,6 +34,7 @@ type Client interface {
 	UpdateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
 	DeleteDeploy(name string, opt kconfig.Opt) error
 	GetDeploy(name string, opt kconfig.Opt) (*appsv1.Deployment, error)
+	CreateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
 	GetEndpoints(name string, opt kconfig.Opt) (*corev1.Endpoints, error)
 	GetService(name string, opt kconfig.Opt) (*corev1.Service, error)
 	UpdateService(service *corev1.Service, opt kconfig.Opt) (*corev1.Service, error)
@@ -66,6 +67,14 @@ type client struct {
 	SharedInformerFactory      informers.SharedInformerFactory
 	informerHandlersByResource map[string]chan struct{}
 	mapLock                    sync.RWMutex
+}
+
+func (c *client) CreateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error) {
+	inter, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return nil, err
+	}
+	return inter.AppsV1().Deployments(opt.Namespace).Create(deploy)
 }
 
 func (c *client) InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event) {
@@ -381,7 +390,7 @@ func (c *client) handlerFactory(filter Filter, caster func(obj interface{}) (run
 				}
 			},
 			UpdateFunc: func(_, newObj interface{}) {
-				if v, ok := newObj.(runtime.Object); len(ch) < buffer && ok {
+				if v, ok := caster(newObj); len(ch) < buffer && ok {
 					ch <- watch.Event{
 						Type:   watch.Modified,
 						Object: v,
@@ -389,7 +398,7 @@ func (c *client) handlerFactory(filter Filter, caster func(obj interface{}) (run
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				if v, ok := obj.(runtime.Object); len(ch) < buffer && ok {
+				if v, ok := caster(obj); len(ch) < buffer && ok {
 					ch <- watch.Event{
 						Type:   watch.Deleted,
 						Object: v,

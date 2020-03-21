@@ -1,15 +1,20 @@
 package service
 
 import (
+	"fmt"
 	"github.com/eddieowens/kage/kube"
 	"github.com/eddieowens/kage/xds/factory"
-	appsv1 "k8s.io/api/apps/v1"
+	"github.com/eddieowens/kage/xds/model"
+	"github.com/eddieowens/kage/xds/snap/snaputil"
+	"github.com/eddieowens/kage/xds/util/canaryutil"
+	"time"
 )
 
 const CanaryServiceKey = "CanaryService"
 
 type CanaryService interface {
-	Canary(deployment *appsv1.Deployment) (*appsv1.Deployment, error)
+	Create(spec *model.CanarySpec) (*model.Canary, error)
+	Delete(spec *model.DeleteCanarySpec) error
 }
 
 type canaryService struct {
@@ -17,6 +22,41 @@ type canaryService struct {
 	CanaryFactory factory.CanaryFactory `inject:"CanaryFactory"`
 }
 
-func (c *canaryService) Canary(deployment *appsv1.Deployment) (*appsv1.Deployment, error) {
+func (c *canaryService) Delete(spec *model.DeleteCanarySpec) error {
+	name := snaputil.GenCanaryName(spec.TargetDeploy.Name)
+	if err := c.KubeClient.DeleteDeploy(name, spec.Opt); err != nil {
+		return err
+	}
+	return nil
+}
 
+func (c *canaryService) Create(spec *model.CanarySpec) (*model.Canary, error) {
+	replicas := int32(1)
+	if spec.TargetDeploy.Spec.Replicas != nil {
+		replicas = *spec.TargetDeploy.Spec.Replicas
+	}
+
+	canaryReplicas := canaryutil.DeriveReplicaCountFromTraffic(replicas, spec.TrafficPercentage)
+
+	name := snaputil.GenCanaryName(spec.TargetDeploy.Name)
+
+	canary := c.CanaryFactory.FromDeployment(name, spec.TargetDeploy, canaryReplicas)
+
+	dep, err := c.KubeClient.CreateDeploy(canary, spec.Opt)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.KubeClient.WaitTillDeployReady(dep.Name, time.Second*30, spec.Opt); err != nil {
+		if err = c.KubeClient.DeleteDeploy(dep.Name, spec.Opt); err != nil {
+			fmt.Println("Failed to clean up canary", dep.Name, ":", err.Error())
+		}
+		return nil, err
+	}
+
+	return &model.Canary{
+		TargetDeploy:      spec.TargetDeploy,
+		CanaryDeploy:      dep,
+		TrafficPercentage: spec.TrafficPercentage,
+	}, nil
 }

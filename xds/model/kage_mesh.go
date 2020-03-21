@@ -12,8 +12,13 @@ type KageMesh struct {
 	ServiceTrafficPercentage uint32
 }
 
+type DeleteKageMeshSpec struct {
+	TargetDeploy *appsv1.Deployment
+	Opt          kconfig.Opt
+}
+
 type KageMeshSpec struct {
-	TargetDeployName        string
-	CanaryTrafficPercentage int32
-	Opt                     kconfig.Opt
+	Canary         *Canary
+	LockdownTarget bool
+	Opt            kconfig.Opt
 }

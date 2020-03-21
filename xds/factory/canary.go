@@ -8,17 +8,18 @@ import (
 const CanaryFactoryKey = "CanaryFactory"
 
 type CanaryFactory interface {
-	FromDeployment(deployment *appsv1.Deployment) *appsv1.Deployment
+	FromDeployment(name string, deployment *appsv1.Deployment, numReplicas int32) *appsv1.Deployment
 }
 
 type canaryFactory struct {
 }
 
-func (c *canaryFactory) FromDeployment(deployment *appsv1.Deployment, numReplicas int32) *appsv1.Deployment {
+func (c *canaryFactory) FromDeployment(name string, deployment *appsv1.Deployment, numReplicas int32) *appsv1.Deployment {
 	canary := deployment.DeepCopy()
 	canary.Spec.Replicas = &numReplicas
 
 	canaryutil.AppendCanaryLabels(deployment.Name, deployment.Labels)
+	canary.Name = name
 
 	return canary
 }

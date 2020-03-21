@@ -19,11 +19,10 @@ import (
 
 const LockdownServiceKey = "LockdownService"
 
-// TODO: Add call to DeployWatchService here.
 type LockdownService interface {
 	Lockdown(deployment *appsv1.Deployment) error
-	DeployPodsEventHandler(deployment *appsv1.Deployment) model.InformEventHandler
-	DeployServicesEventHandler(deployment *appsv1.Deployment) model.InformEventHandler
+	Release(deployment *appsv1.Deployment) error
+	IsLockedDown(deployment *appsv1.Deployment) bool
 }
 
 type lockdownService struct {
@@ -33,13 +32,33 @@ type lockdownService struct {
 	lock              sync.RWMutex
 }
 
+func (l *lockdownService) IsLockedDown(deployment *appsv1.Deployment) bool {
+	if v, ok := deployment.Labels[consts.LabelKeyLockedDown]; ok {
+		return v == "true"
+	}
+	return false
+}
+
+func (l *lockdownService) Release(deployment *appsv1.Deployment) error {
+	lockdown := l.getLockDownMeta(deployment)
+	if lockdown == nil {
+		// TODO: log that the deployment wasn't locked down
+		return nil
+	}
+
+	l.rollbackLockdown(deployment, lockdown)
+
+	return nil
+}
+
 func (l *lockdownService) Lockdown(deployment *appsv1.Deployment) error {
-	handler := l.DeployServicesEventHandler(deployment)
-	if err := l.WatchService.DeploymentServices(deployment, handler); err != nil {
+	err := l.WatchService.DeploymentServices(deployment, l.DeployServicesEventHandler(deployment))
+	if err != nil {
 		return err
 	}
 
-	if err := l.WatchService.DeploymentPods(deployment, l.DeployPodsEventHandler(deployment)); err != nil {
+	err = l.WatchService.DeploymentPods(deployment, l.DeployPodsEventHandler(deployment))
+	if err != nil {
 		return err
 	}
 	return nil
@@ -132,6 +151,17 @@ func (l *lockdownService) updateLockdownMeta(deployment *appsv1.Deployment, opt 
 	return &lockdown, nil
 }
 
+func (l *lockdownService) getLockDownMeta(deploy *appsv1.Deployment) *model.Lockdown {
+	if v, ok := deploy.Annotations[consts.AnnotationKeyLockdown]; ok {
+		lockdown := new(model.Lockdown)
+		if err := json.Unmarshal([]byte(v), lockdown); err != nil {
+			return nil
+		}
+		return lockdown
+	}
+	return nil
+}
+
 func (l *lockdownService) watchPodEvent(deployment *appsv1.Deployment) model.OnWatchEventFunc {
 	return func(event watch.Event) {
 		switch event.Type {
@@ -197,6 +227,20 @@ func (l *lockdownService) watchSvcEvent(deployment *appsv1.Deployment) model.OnW
 			}
 			break
 		}
+	}
+}
+
+func (l *lockdownService) rollbackLockdown(deploy *appsv1.Deployment, lockdown *model.Lockdown) {
+	for k, v := range lockdown.DeletedLabels {
+		deploy.Labels[k] = v
+	}
+
+	if _, ok := deploy.Annotations[consts.AnnotationKeyLockdown]; ok {
+		delete(deploy.Annotations, consts.AnnotationKeyLockdown)
+	}
+
+	if _, ok := deploy.Labels[consts.LabelKeyLockedDown]; ok {
+		delete(deploy.Labels, consts.LabelKeyLockedDown)
 	}
 }
 

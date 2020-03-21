@@ -59,7 +59,7 @@ func (s *storeClient) Reload(nodeId string) error {
 	defer s.lock.Unlock()
 	currentState, _ := s.get(nodeId)
 
-	if currentState != nil && state.UuidVersion == currentState.UuidVersion {
+	if currentState != nil && state.UuidVersion == currentState.UuidVersion && state.CreationTimestampUtc.After(currentState.CreationTimestampUtc) {
 		return nil
 	}
 

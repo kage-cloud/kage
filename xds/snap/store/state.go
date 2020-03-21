@@ -4,6 +4,7 @@ import (
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
+	"time"
 )
 
 type EnvoyState struct {
@@ -12,6 +13,9 @@ type EnvoyState struct {
 
 	// A unique version delegated to every single Envoy State.
 	UuidVersion string `json:"uuid_version"`
+
+	// The time of creation in UTC.
+	CreationTimestampUtc time.Time `json:"creation_timestamp_utc"`
 
 	// The Envoy Listener definitions for the Envoy config. Required. See
 	// https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/listener.proto for more details.

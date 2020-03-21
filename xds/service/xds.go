@@ -1,36 +1,58 @@
 package service
 
 import (
+	"github.com/eddieowens/kage/xds/except"
 	"github.com/eddieowens/kage/xds/factory"
 	"github.com/eddieowens/kage/xds/model"
 	"github.com/eddieowens/kage/xds/snap"
 	"github.com/eddieowens/kage/xds/snap/snaputil"
 	"github.com/eddieowens/kage/xds/snap/store"
-	appsv1 "k8s.io/api/apps/v1"
 )
 
 const XdsServiceKey = "XdsService"
 
 type XdsService interface {
-	InitializeControlPlane(deploy *appsv1.Deployment) (model.InformEventHandler, error)
+	InitializeControlPlane(canary *model.Canary) error
+	StopControlPlane(targetDeployKey string) error
 }
 
 type xdsService struct {
-	XdsEventHandler XdsEventHandler      `inject:"XdsEventHandler"`
-	RouteFactory    factory.RouteFactory `inject:"RouteFactory"`
-	StoreClient     snap.StoreClient     `inject:"StoreClient"`
+	XdsEventHandler       XdsEventHandler       `inject:"XdsEventHandler"`
+	DeployWatchService    DeployWatchService    `inject:"DeployWatchService"`
+	RouteFactory          factory.RouteFactory  `inject:"RouteFactory"`
+	StoreClient           snap.StoreClient      `inject:"StoreClient"`
+	StopperHandlerService StopperHandlerService `inject:"StopperHandlerService"`
 }
 
-func (x *xdsService) InitializeControlPlane(deploy *appsv1.Deployment) (model.InformEventHandler, error) {
-	handler := x.XdsEventHandler.DeployPodsEventHandler(deploy)
+func (x *xdsService) StopControlPlane(targetDeployKey string) error {
+	if !x.StopperHandlerService.Exists(targetDeployKey) {
+		return except.NewError("%s could not be found", except.ErrNotFound, targetDeployKey)
+	}
+	x.StopperHandlerService.Stop(targetDeployKey, nil)
+	return nil
+}
 
-	canaryName := snaputil.GenCanaryName(deploy.Name)
-	serviceName := snaputil.GenServiceName(deploy.Name)
-	routes := x.RouteFactory.FromPercentage(canaryName, serviceName, 0, model.TotalRoutingWeight)
+func (x *xdsService) InitializeControlPlane(canary *model.Canary) error {
+	if x.controlPlaneExists(canary.TargetDeploy.Name) {
+		return except.NewError("a canary for %s already exists", except.ErrAlreadyExists, canary.TargetDeploy.Name)
+	}
+	handler := x.XdsEventHandler.DeployPodsEventHandler(canary.TargetDeploy)
+
+	serviceName := snaputil.GenServiceName(canary.TargetDeploy.Name)
+	routes := x.RouteFactory.FromPercentage(canary.Name, serviceName, canary.TrafficPercentage, model.TotalRoutingWeight)
 
 	if err := x.StoreClient.Set(&store.EnvoyState{Routes: routes}); err != nil {
-		return nil, err
+		return err
 	}
 
-	return handler, nil
+	err := x.DeployWatchService.DeploymentPods(canary.TargetDeploy, handler)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (x *xdsService) controlPlaneExists(targetDeployName string) bool {
+	return x.StopperHandlerService.Exists(targetDeployName)
 }
