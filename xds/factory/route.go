@@ -1,10 +1,10 @@
 package factory
 
 import (
-	"github.com/eddieowens/kage/xds/model"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
 	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"github.com/kage-cloud/kage/xds/model"
 )
 
 const RouteFactoryKey = "RouteFactory"

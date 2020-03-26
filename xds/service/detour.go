@@ -2,10 +2,10 @@ package service
 
 import (
 	"fmt"
-	"github.com/eddieowens/kage/kube"
-	"github.com/eddieowens/kage/kube/kconfig"
-	"github.com/eddieowens/kage/kube/kubeutil"
-	"github.com/eddieowens/kage/xds/model"
+	"github.com/kage-cloud/kage/kube"
+	"github.com/kage-cloud/kage/kube/kconfig"
+	"github.com/kage-cloud/kage/kube/kubeutil"
+	"github.com/kage-cloud/kage/xds/model"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"

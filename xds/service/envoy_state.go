@@ -1,10 +1,10 @@
 package service
 
 import (
-	"github.com/eddieowens/kage/xds/except"
-	"github.com/eddieowens/kage/xds/snap/snaputil"
-	"github.com/eddieowens/kage/xds/snap/store"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
+	"github.com/kage-cloud/kage/xds/except"
+	"github.com/kage-cloud/kage/xds/snap/snaputil"
+	"github.com/kage-cloud/kage/xds/snap/store"
 )
 
 const EnvoyStateServiceKey = "EnvoyStateService"

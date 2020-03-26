@@ -1,7 +1,7 @@
 package model
 
 import (
-	"github.com/eddieowens/kage/kube/kconfig"
+	"github.com/kage-cloud/kage/kube/kconfig"
 	appsv1 "k8s.io/api/apps/v1"
 )
 

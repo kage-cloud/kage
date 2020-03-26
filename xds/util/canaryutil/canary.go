@@ -1,7 +1,7 @@
 package canaryutil
 
 import (
-	"github.com/eddieowens/kage/xds/model"
+	"github.com/kage-cloud/kage/xds/model"
 	"math"
 )
 

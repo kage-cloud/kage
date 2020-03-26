@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"github.com/eddieowens/kage/xds/exchange"
-	"github.com/eddieowens/kage/xds/service"
+	"github.com/kage-cloud/kage/xds/exchange"
+	"github.com/kage-cloud/kage/xds/service"
 	"github.com/labstack/echo/v4"
 	"net/http"
 )

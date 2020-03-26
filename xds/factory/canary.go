@@ -1,7 +1,7 @@
 package factory
 
 import (
-	"github.com/eddieowens/kage/xds/util/canaryutil"
+	"github.com/kage-cloud/kage/xds/util/canaryutil"
 	appsv1 "k8s.io/api/apps/v1"
 )
 

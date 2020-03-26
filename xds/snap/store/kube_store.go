@@ -3,9 +3,9 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/eddieowens/kage/kube"
-	"github.com/eddieowens/kage/kube/kconfig"
-	"github.com/eddieowens/kage/xds/model/consts"
+	"github.com/kage-cloud/kage/kube"
+	"github.com/kage-cloud/kage/kube/kconfig"
+	"github.com/kage-cloud/kage/xds/model/consts"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"

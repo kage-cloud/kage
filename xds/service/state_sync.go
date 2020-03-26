@@ -2,11 +2,11 @@ package service
 
 import (
 	"fmt"
-	"github.com/eddieowens/kage/kube"
-	"github.com/eddieowens/kage/synchelpers"
-	"github.com/eddieowens/kage/xds/model/consts"
-	"github.com/eddieowens/kage/xds/snap"
-	"github.com/eddieowens/kage/xds/snap/snaputil"
+	"github.com/kage-cloud/kage/kube"
+	"github.com/kage-cloud/kage/synchelpers"
+	"github.com/kage-cloud/kage/xds/model/consts"
+	"github.com/kage-cloud/kage/xds/snap"
+	"github.com/kage-cloud/kage/xds/snap/snaputil"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"

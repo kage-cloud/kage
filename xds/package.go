@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/eddieowens/axon"
-	"github.com/eddieowens/kage/kube"
+	"github.com/kage-cloud/kage/kube"
 )
 
 type Package struct {

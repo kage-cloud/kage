@@ -2,7 +2,7 @@ package service
 
 import (
 	"github.com/eddieowens/axon"
-	"github.com/eddieowens/kage/synchelpers"
+	"github.com/kage-cloud/kage/synchelpers"
 	"sync"
 )
 

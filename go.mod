@@ -1,4 +1,4 @@
-module github.com/eddieowens/kage
+module github.com/kage-cloud/kage
 
 go 1.13
 

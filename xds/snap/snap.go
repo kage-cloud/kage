@@ -2,13 +2,13 @@ package snap
 
 import (
 	"fmt"
-	"github.com/eddieowens/kage/xds/except"
-	"github.com/eddieowens/kage/xds/snap/store"
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	"github.com/google/uuid"
+	"github.com/kage-cloud/kage/xds/except"
+	"github.com/kage-cloud/kage/xds/snap/store"
 	"sync"
 )
 

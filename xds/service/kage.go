@@ -1,9 +1,9 @@
 package service
 
 import (
-	"github.com/eddieowens/kage/kube"
-	"github.com/eddieowens/kage/kube/kconfig"
-	"github.com/eddieowens/kage/xds/model"
+	"github.com/kage-cloud/kage/kube"
+	"github.com/kage-cloud/kage/kube/kconfig"
+	"github.com/kage-cloud/kage/xds/model"
 	"os"
 )
 

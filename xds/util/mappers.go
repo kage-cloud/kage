@@ -1,8 +1,8 @@
 package util
 
 import (
-	"github.com/eddieowens/kage/xds/except"
 	envcore "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
+	"github.com/kage-cloud/kage/xds/except"
 	corev1 "k8s.io/api/core/v1"
 )
 

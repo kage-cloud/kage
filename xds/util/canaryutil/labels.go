@@ -1,8 +1,8 @@
 package canaryutil
 
 import (
-	"github.com/eddieowens/kage/xds/model/consts"
-	"github.com/eddieowens/kage/xds/util"
+	"github.com/kage-cloud/kage/xds/model/consts"
+	"github.com/kage-cloud/kage/xds/util"
 )
 
 func AppendCanaryLabels(targetDeployName string, labels map[string]string) {

@@ -2,8 +2,8 @@ package kube
 
 import (
 	"fmt"
-	"github.com/eddieowens/kage/kube/kconfig"
-	"github.com/eddieowens/kage/xds/except"
+	"github.com/kage-cloud/kage/kube/kconfig"
+	"github.com/kage-cloud/kage/xds/except"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"

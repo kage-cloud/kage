@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/eddieowens/axon"
-	"github.com/eddieowens/kage/xds/factory"
-	"github.com/eddieowens/kage/xds/snap"
-	"github.com/eddieowens/kage/xds/handler"
+	"github.com/kage-cloud/kage/xds/factory"
+	"github.com/kage-cloud/kage/xds/snap"
+	"github.com/kage-cloud/kage/xds/handler"
 )
 
 func InjectorFactory() axon.Injector {

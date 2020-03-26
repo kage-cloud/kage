@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/eddieowens/axon"
-	"github.com/eddieowens/kage/xds/controller"
+	"github.com/kage-cloud/kage/xds/controller"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"os"

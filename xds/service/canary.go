@@ -2,11 +2,11 @@ package service
 
 import (
 	"fmt"
-	"github.com/eddieowens/kage/kube"
-	"github.com/eddieowens/kage/xds/factory"
-	"github.com/eddieowens/kage/xds/model"
-	"github.com/eddieowens/kage/xds/snap/snaputil"
-	"github.com/eddieowens/kage/xds/util/canaryutil"
+	"github.com/kage-cloud/kage/kube"
+	"github.com/kage-cloud/kage/xds/factory"
+	"github.com/kage-cloud/kage/xds/model"
+	"github.com/kage-cloud/kage/xds/snap/snaputil"
+	"github.com/kage-cloud/kage/xds/util/canaryutil"
 	"time"
 )
 

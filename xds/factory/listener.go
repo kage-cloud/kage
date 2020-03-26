@@ -2,13 +2,13 @@ package factory
 
 import (
 	"fmt"
-	"github.com/eddieowens/kage/xds/model"
 	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	envcore "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	listener "github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/kage-cloud/kage/xds/model"
 )
 
 const ListenerFactoryKey = "ListenerFactory"

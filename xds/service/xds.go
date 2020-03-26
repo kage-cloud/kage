@@ -1,12 +1,12 @@
 package service
 
 import (
-	"github.com/eddieowens/kage/xds/except"
-	"github.com/eddieowens/kage/xds/factory"
-	"github.com/eddieowens/kage/xds/model"
-	"github.com/eddieowens/kage/xds/snap"
-	"github.com/eddieowens/kage/xds/snap/snaputil"
-	"github.com/eddieowens/kage/xds/snap/store"
+	"github.com/kage-cloud/kage/xds/except"
+	"github.com/kage-cloud/kage/xds/factory"
+	"github.com/kage-cloud/kage/xds/model"
+	"github.com/kage-cloud/kage/xds/snap"
+	"github.com/kage-cloud/kage/xds/snap/snaputil"
+	"github.com/kage-cloud/kage/xds/snap/store"
 )
 
 const XdsServiceKey = "XdsService"

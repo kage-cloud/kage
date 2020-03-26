@@ -2,7 +2,7 @@ package util
 
 import (
 	"fmt"
-	"github.com/eddieowens/kage/xds/model/consts"
+	"github.com/kage-cloud/kage/xds/model/consts"
 )
 
 func GenKageMeshName(targetDeployName string) string {

@@ -1,10 +1,10 @@
 package service
 
 import (
-	"github.com/eddieowens/kage/xds/exchange"
-	"github.com/eddieowens/kage/xds/factory"
-	"github.com/eddieowens/kage/xds/snap"
-	"github.com/eddieowens/kage/xds/snap/store"
+	"github.com/kage-cloud/kage/xds/exchange"
+	"github.com/kage-cloud/kage/xds/factory"
+	"github.com/kage-cloud/kage/xds/snap"
+	"github.com/kage-cloud/kage/xds/snap/store"
 )
 
 const TrafficControllerServiceKey = "TrafficControllerService"
