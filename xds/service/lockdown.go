@@ -6,11 +6,13 @@ import (
 	"github.com/eddieowens/axon"
 	"github.com/eddieowens/kage/kube"
 	"github.com/eddieowens/kage/kube/kconfig"
+	"github.com/eddieowens/kage/kube/kubeutil"
+	"github.com/eddieowens/kage/xds/except"
 	"github.com/eddieowens/kage/xds/model"
 	"github.com/eddieowens/kage/xds/model/consts"
-	"github.com/eddieowens/kage/xds/util/kubeutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -20,38 +22,86 @@ import (
 const LockdownServiceKey = "LockdownService"
 
 type LockdownService interface {
-	Lockdown(deployment *appsv1.Deployment) error
-	Release(deployment *appsv1.Deployment) error
-	IsLockedDown(deployment *appsv1.Deployment) bool
+	// Incomplete
+	LockdownDeploy(deployment *appsv1.Deployment) error
+	// Incomplete
+	ReleaseDeploy(deployment *appsv1.Deployment) error
+
+	// Removes the selector from the service stopping it from editing the endpoints file.
+	LockdownService(svc *corev1.Service, opt kconfig.Opt) error
+
+	// Re-adds the removed selector to the service allowing it to go back to editing the endpoints file.
+	ReleaseService(svc *corev1.Service, opt kconfig.Opt) error
+
+	IsLockedDown(obj metav1.Object) bool
 }
 
 type lockdownService struct {
-	KubeClient        kube.Client        `inject:"KubeClient"`
-	WatchService      DeployWatchService `inject:"DeployWatchService"`
-	selectorsByDeploy map[string]labels.Set
-	lock              sync.RWMutex
+	KubeClient            kube.Client           `inject:"KubeClient"`
+	WatchService          DeployWatchService    `inject:"DeployWatchService"`
+	StopperHandlerService StopperHandlerService `inject:"StopperHandlerService"`
+	selectorsByDeploy     map[string]labels.Set
+	lock                  sync.RWMutex
 }
 
-func (l *lockdownService) IsLockedDown(deployment *appsv1.Deployment) bool {
-	if v, ok := deployment.Labels[consts.LabelKeyLockedDown]; ok {
+func (l *lockdownService) LockdownService(svc *corev1.Service, opt kconfig.Opt) error {
+	if l.IsLockedDown(svc) {
+		return nil
+	}
+	if svc.Spec.Selector == nil {
+		return except.NewError("service %s's endpoints are already being managed by something else", except.ErrConflict, svc.Name)
+	}
+
+	lockdown := &model.Lockdown{DeletedSet: svc.Spec.Selector}
+
+	svc.Spec.Selector = nil
+
+	l.saveLockdownMeta(svc, lockdown)
+
+	if _, err := l.KubeClient.UpdateService(svc, opt); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (l *lockdownService) ReleaseService(svc *corev1.Service, opt kconfig.Opt) error {
+	deepCopy := svc.DeepCopy()
+	lockdown := l.getLockDownMeta(deepCopy)
+
+	deepCopy.Spec.Selector = lockdown.DeletedSet
+	l.removeLockdownMeta(deepCopy)
+	if _, err := l.KubeClient.UpdateService(deepCopy, opt); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (l *lockdownService) IsLockedDown(obj metav1.Object) bool {
+	if v, ok := obj.GetLabels()[consts.LabelKeyLockedDown]; ok {
 		return v == "true"
 	}
 	return false
 }
 
-func (l *lockdownService) Release(deployment *appsv1.Deployment) error {
+func (l *lockdownService) ReleaseDeploy(deployment *appsv1.Deployment) error {
 	lockdown := l.getLockDownMeta(deployment)
 	if lockdown == nil {
-		// TODO: log that the deployment wasn't locked down
 		return nil
 	}
 
-	l.rollbackLockdown(deployment, lockdown)
+	opt := kconfig.Opt{Namespace: kubeutil.DeploymentPodNamespace(deployment)}
+
+	_, err := l.rollbackLockdown(deployment, lockdown, opt)
+	if err != nil {
+		fmt.Println("Failed to rollback the lockdown of", deployment.Name, "in", opt.Namespace, ":", err.Error())
+		return err
+	}
 
 	return nil
 }
 
-func (l *lockdownService) Lockdown(deployment *appsv1.Deployment) error {
+func (l *lockdownService) LockdownDeploy(deployment *appsv1.Deployment) error {
 	err := l.WatchService.DeploymentServices(deployment, l.DeployServicesEventHandler(deployment))
 	if err != nil {
 		return err
@@ -90,7 +140,7 @@ func (l *lockdownService) listPodEvent(deployment *appsv1.Deployment) model.OnLi
 			}
 
 			for _, p := range v.Items {
-				for k := range lockdown.DeletedLabels {
+				for k := range lockdown.DeletedSet {
 					delete(p.Labels, k)
 				}
 				if _, err := l.KubeClient.UpdatePod(&p, opt); err != nil {
@@ -100,6 +150,30 @@ func (l *lockdownService) listPodEvent(deployment *appsv1.Deployment) model.OnLi
 		}
 		return nil
 	}
+}
+
+func (l *lockdownService) saveLockdownMeta(obj metav1.Object, lockdown *model.Lockdown) {
+	lbls := obj.GetLabels()
+	if lbls == nil {
+		lbls = map[string]string{}
+	}
+
+	annos := obj.GetAnnotations()
+	if annos == nil {
+		annos = map[string]string{}
+	}
+
+	b, err := json.Marshal(lockdown)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Failed to marshal lockdown %v for %s in %s", lockdown, obj.GetName(), obj.GetNamespace()))
+		return
+	}
+
+	annos[consts.AnnotationKeyLockdown] = string(b)
+	lbls[consts.LabelKeyLockedDown] = "true"
+
+	obj.SetAnnotations(annos)
+	obj.SetLabels(lbls)
 }
 
 func (l *lockdownService) updateLockdownMeta(deployment *appsv1.Deployment, opt kconfig.Opt) (*model.Lockdown, error) {
@@ -118,41 +192,29 @@ func (l *lockdownService) updateLockdownMeta(deployment *appsv1.Deployment, opt 
 		i++
 	}
 	l.lock.RUnlock()
-	lockdown := model.Lockdown{
-		DeletedLabels: map[string]string{},
+	lockdown := &model.Lockdown{
+		DeletedSet: map[string]string{},
 	}
 	depCopy := deployment.DeepCopy()
 	for _, key := range labelKeys {
 		if v, ok := depCopy.Spec.Template.Labels[key]; ok {
-			lockdown.DeletedLabels[key] = v
+			lockdown.DeletedSet[key] = v
 		}
 	}
 
-	if depCopy.Annotations == nil {
-		depCopy.Annotations = map[string]string{}
-	}
+	l.saveLockdownMeta(depCopy, lockdown)
 
-	if depCopy.Labels == nil {
-		depCopy.Labels = map[string]string{}
-	}
-
-	b, err := json.Marshal(lockdown)
-	if err != nil {
-		return nil, err
-	}
-
-	depCopy.Annotations[consts.AnnotationKeyLockdown] = string(b)
-	depCopy.Labels[consts.LabelKeyLockedDown] = "true"
+	// TODO: Remove the labels from the pod template spec as well.
 
 	if _, err := l.KubeClient.UpdateDeploy(depCopy, opt); err != nil {
 		return nil, err
 	}
 
-	return &lockdown, nil
+	return lockdown, nil
 }
 
-func (l *lockdownService) getLockDownMeta(deploy *appsv1.Deployment) *model.Lockdown {
-	if v, ok := deploy.Annotations[consts.AnnotationKeyLockdown]; ok {
+func (l *lockdownService) getLockDownMeta(obj metav1.Object) *model.Lockdown {
+	if v, ok := obj.GetAnnotations()[consts.AnnotationKeyLockdown]; ok {
 		lockdown := new(model.Lockdown)
 		if err := json.Unmarshal([]byte(v), lockdown); err != nil {
 			return nil
@@ -201,7 +263,7 @@ func (l *lockdownService) listSvcEvent(deployment *appsv1.Deployment) model.OnLi
 			defer l.lock.Unlock()
 			for _, svc := range v.Items {
 				if v, ok := l.selectorsByDeploy[deployment.Name]; ok {
-					l.selectorsByDeploy[deployment.Name] = l.mergeSets(v, svc.Spec.Selector)
+					l.selectorsByDeploy[deployment.Name] = labels.Merge(v, svc.Spec.Selector)
 				}
 			}
 		}
@@ -217,7 +279,7 @@ func (l *lockdownService) watchSvcEvent(deployment *appsv1.Deployment) model.OnW
 				l.lock.Lock()
 				defer l.lock.Unlock()
 				if v, ok := l.selectorsByDeploy[deployment.Name]; ok {
-					l.selectorsByDeploy[deployment.Name] = l.mergeSets(v, svc.Spec.Selector)
+					l.selectorsByDeploy[deployment.Name] = labels.Merge(v, svc.Spec.Selector)
 				}
 				l.lock.Unlock()
 				opt := kconfig.Opt{Namespace: deployment.Namespace}
@@ -230,28 +292,51 @@ func (l *lockdownService) watchSvcEvent(deployment *appsv1.Deployment) model.OnW
 	}
 }
 
-func (l *lockdownService) rollbackLockdown(deploy *appsv1.Deployment, lockdown *model.Lockdown) {
-	for k, v := range lockdown.DeletedLabels {
-		deploy.Labels[k] = v
+func (l *lockdownService) removeLockdownMeta(obj metav1.Object) {
+	lbls := obj.GetLabels()
+
+	annos := obj.GetAnnotations()
+
+	if _, ok := lbls[consts.LabelKeyLockedDown]; ok {
+		delete(lbls, consts.LabelKeyLockedDown)
 	}
 
-	if _, ok := deploy.Annotations[consts.AnnotationKeyLockdown]; ok {
-		delete(deploy.Annotations, consts.AnnotationKeyLockdown)
+	if _, ok := annos[consts.AnnotationKeyLockdown]; ok {
+		delete(annos, consts.AnnotationKeyLockdown)
 	}
 
-	if _, ok := deploy.Labels[consts.LabelKeyLockedDown]; ok {
-		delete(deploy.Labels, consts.LabelKeyLockedDown)
-	}
+	obj.SetLabels(lbls)
+	obj.SetAnnotations(annos)
 }
 
-// Merges Set s2 into Set s1 and returns the resulting set.
-func (l *lockdownService) mergeSets(s1 labels.Set, s2 labels.Set) labels.Set {
-	for k, v := range s2 {
-		if _, ok := s1[k]; !ok {
-			s1[k] = v
+func (l *lockdownService) rollbackLockdown(deploy *appsv1.Deployment, lockdown *model.Lockdown, opt kconfig.Opt) (*appsv1.Deployment, error) {
+	dep := deploy.DeepCopy()
+
+	selector, err := metav1.LabelSelectorAsSelector(deploy.Spec.Selector)
+	if err != nil {
+		return nil, err
+	}
+
+	depPods, err := l.KubeClient.ListPods(selector.String(), opt)
+	if err != nil {
+		fmt.Println("Failed to rollback the lockdown of", deploy.Name, "in", opt.Namespace, ":", err.Error())
+		return nil, err
+	}
+
+	for _, p := range depPods {
+		for k := range lockdown.DeletedSet {
+			delete(p.Labels, k)
+		}
+		if _, err := l.KubeClient.UpdatePod(&p, opt); err != nil {
+			fmt.Println("Failed to remove the lockdown for pod", p.Name, "in", opt.Namespace, ":", err.Error())
 		}
 	}
-	return s1
+
+	l.removeLockdownMeta(dep)
+
+	// TODO: re-add the deleted labels to the pod template spec for the dep
+
+	return dep, nil
 }
 
 func lockDownServiceFactory(_ axon.Injector, _ axon.Args) axon.Instance {

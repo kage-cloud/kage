@@ -3,9 +3,11 @@ package service
 import (
 	"fmt"
 	"github.com/eddieowens/kage/kube"
+	"github.com/eddieowens/kage/kube/kconfig"
+	"github.com/eddieowens/kage/kube/kubeutil"
 	"github.com/eddieowens/kage/synchelpers"
+	"github.com/eddieowens/kage/utils"
 	"github.com/eddieowens/kage/xds/model"
-	"github.com/eddieowens/kage/xds/util/kubeutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,11 +19,67 @@ const DeployWatchServiceKey = "DeployWatchService"
 type DeployWatchService interface {
 	DeploymentPods(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error
 	DeploymentServices(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error
+	DeploymentEndpoints(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error
 }
 
 type deployWatchService struct {
 	KubeClient            kube.Client           `inject:"KubeClient"`
 	StopperHandlerService StopperHandlerService `inject:"StopperHandlerService"`
+}
+
+func (d *deployWatchService) DeploymentEndpoints(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error {
+	ns := kubeutil.DeploymentPodNamespace(deploy)
+
+	svcs, err := d.KubeClient.ListServices("", kconfig.Opt{Namespace: ns})
+	if err != nil {
+		return err
+	}
+
+	svcs = kubeutil.MatchedServices(deploy.Spec.Template.Labels, svcs)
+
+	svcNames := make([]string, len(svcs))
+	for i, s := range svcs {
+		svcNames[i] = s.Name
+	}
+
+	eps, wi := d.KubeClient.InformAndListEndpoints(func(object metav1.Object) bool {
+		_, idx := utils.FindString(object.GetName(), svcNames)
+		return idx != -1
+	})
+
+	epList := &corev1.EndpointsList{
+		Items: eps,
+	}
+
+	for _, eh := range eventHandler {
+		if err := eh.OnListEvent(epList); err != nil {
+			return err
+		}
+	}
+
+	stopChan := make(chan error)
+	objKey := kubeutil.ObjectKey(deploy)
+	stopper := synchelpers.NewStopper(func(err error) {
+		d.StopperHandlerService.Remove(objKey)
+		stopChan <- err
+	})
+	go func() {
+		for {
+			select {
+			case e := <-wi:
+				for _, handler := range eventHandler {
+					handler.OnWatchEvent(e)
+				}
+			case err := <-stopChan:
+				if err != nil {
+					fmt.Println("Stopping watch of", deploy.Name, "endpoints in", deploy.Namespace)
+				}
+				return
+			}
+		}
+	}()
+	d.StopperHandlerService.Add(objKey, stopper)
+	return nil
 }
 
 func (d *deployWatchService) DeploymentServices(deploy *appsv1.Deployment, eventHandler ...model.InformEventHandler) error {
@@ -75,6 +133,7 @@ func (d *deployWatchService) DeploymentPods(deploy *appsv1.Deployment, eventHand
 		return err
 	}
 
+	selector.String()
 	ns := deploy.Spec.Template.Namespace
 	if ns == "" {
 		ns = deploy.Namespace

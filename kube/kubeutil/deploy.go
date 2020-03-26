@@ -3,10 +3,28 @@ package kubeutil
 import (
 	"fmt"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"strings"
 )
+
+func MatchedServices(l map[string]string, svcs []corev1.Service) []corev1.Service {
+	var services []corev1.Service
+	for i := range svcs {
+		service := svcs[i]
+		if service.Spec.Selector == nil {
+			// services with nil selectors match nothing, not everything.
+			continue
+		}
+		selector := labels.Set(service.Spec.Selector).AsSelectorPreValidated()
+		if selector.Matches(labels.Set(l)) {
+			services = append(services, service)
+		}
+	}
+	return services
+}
 
 // Resolves the namespace of the pod template for the deployment. if the namespace is listed on the pod template,
 // returns that value. if the namespace is listed on the deployment, that value is used.

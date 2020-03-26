@@ -19,6 +19,7 @@ import (
 
 type Client interface {
 	InformAndListServices(filter Filter) ([]corev1.Service, <-chan watch.Event)
+	InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-chan watch.Event)
 	InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event)
 	InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event)
 	InformDeploy(filter Filter) <-chan watch.Event
@@ -26,11 +27,14 @@ type Client interface {
 	WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error
 	GetConfigMap(name string, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error)
+	ListPods(labelSelector string, opt kconfig.Opt) ([]corev1.Pod, error)
 	ListEndpoints(labelSelector string, opt kconfig.Opt) ([]corev1.Endpoints, error)
+	ListServices(labelSelector string, opt kconfig.Opt) ([]corev1.Service, error)
 	DeleteConfigMap(name string, opt kconfig.Opt) error
 	UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	UpsertDeploy(dep *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
 	UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error)
+	UpdateEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error)
 	UpdateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
 	DeleteDeploy(name string, opt kconfig.Opt) error
 	GetDeploy(name string, opt kconfig.Opt) (*appsv1.Deployment, error)
@@ -38,7 +42,6 @@ type Client interface {
 	GetEndpoints(name string, opt kconfig.Opt) (*corev1.Endpoints, error)
 	GetService(name string, opt kconfig.Opt) (*corev1.Service, error)
 	UpdateService(service *corev1.Service, opt kconfig.Opt) (*corev1.Service, error)
-	ListServices(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.Service, error)
 }
 
 func NewClient() (Client, error) {
@@ -67,6 +70,60 @@ type client struct {
 	SharedInformerFactory      informers.SharedInformerFactory
 	informerHandlersByResource map[string]chan struct{}
 	mapLock                    sync.RWMutex
+}
+
+func (c *client) UpdateEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error) {
+	inter, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return nil, err
+	}
+	return inter.CoreV1().Endpoints(opt.Namespace).Update(ep)
+}
+
+func (c *client) InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-chan watch.Event) {
+	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
+		object, b = obj.(*corev1.Endpoints)
+		return
+	})
+	informer := c.SharedInformerFactory.Core().V1().Endpoints().Informer()
+	informer.AddEventHandler(handler)
+	c.initInformer("endpoints", informer)
+	c.waitForSync(informer)
+	eps, _ := c.SharedInformerFactory.Core().V1().Endpoints().Lister().List(labels.NewSelector())
+	result := make([]corev1.Endpoints, 0)
+	for _, e := range eps {
+		if filter(e) {
+			result = append(result, *e)
+		}
+	}
+	return result, ch
+}
+
+func (c *client) ListPods(labelSelector string, opt kconfig.Opt) ([]corev1.Pod, error) {
+	if c.informerRunning("pods") {
+		parsedLabelSelector, err := labels.Parse(labelSelector)
+		if err != nil {
+			return nil, err
+		}
+		eps, err := c.SharedInformerFactory.Core().V1().Pods().Lister().Pods(opt.Namespace).List(parsedLabelSelector)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]corev1.Pod, len(eps))
+		for i, e := range eps {
+			result[i] = *e
+		}
+		return result, nil
+	}
+	inter, err := c.Config.Api(opt.Context)
+	if err != nil {
+		return nil, err
+	}
+	items, err := inter.CoreV1().Pods(opt.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
 }
 
 func (c *client) CreateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error) {
@@ -189,12 +246,27 @@ func (c *client) InformDeploy(filter Filter) <-chan watch.Event {
 	return ch
 }
 
-func (c *client) ListServices(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.Service, error) {
+func (c *client) ListServices(labelSelector string, opt kconfig.Opt) ([]corev1.Service, error) {
+	if c.informerRunning("service") {
+		parsedLabelSelector, err := labels.Parse(labelSelector)
+		if err != nil {
+			return nil, err
+		}
+		eps, err := c.SharedInformerFactory.Core().V1().Services().Lister().Services(opt.Namespace).List(parsedLabelSelector)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]corev1.Service, len(eps))
+		for i, e := range eps {
+			result[i] = *e
+		}
+		return result, nil
+	}
 	inter, err := c.Config.Api(opt.Context)
 	if err != nil {
 		return nil, err
 	}
-	items, err := inter.CoreV1().Services(opt.Namespace).List(lo)
+	items, err := inter.CoreV1().Services(opt.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +319,7 @@ func (c *client) WaitTillDeployReady(name string, timeout time.Duration, opt kco
 						}
 					}
 				}
-				return except.NewError("Deploy %s failed: %s", except.ErrUnknown, reason)
+				return except.NewError("Deploy %s failed: %s", except.ErrInternalError, reason)
 			case watch.Modified:
 				if r.Object != nil {
 					if dep, ok := r.Object.(*appsv1.Deployment); ok {

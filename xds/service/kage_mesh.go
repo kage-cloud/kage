@@ -56,7 +56,7 @@ func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
 	}
 
 	if k.LockdownService.IsLockedDown(spec.TargetDeploy) {
-		if err := k.LockdownService.Release(spec.TargetDeploy); err != nil {
+		if err := k.LockdownService.ReleaseDeploy(spec.TargetDeploy); err != nil {
 			return err
 		}
 	}
@@ -127,7 +127,7 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 	}
 
 	if spec.LockdownTarget {
-		if err := k.LockdownService.Lockdown(spec.Canary.TargetDeploy); err != nil {
+		if err := k.LockdownService.LockdownDeploy(spec.Canary.TargetDeploy); err != nil {
 			return nil, err
 		}
 	}

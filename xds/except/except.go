@@ -6,7 +6,8 @@ type ErrorReason string
 
 const (
 	ErrNotFound      ErrorReason = "NotFound"
-	ErrUnknown       ErrorReason = "Unknown"
+	ErrConflict      ErrorReason = "Conflict"
+	ErrInternalError ErrorReason = "InternalError"
 	ErrUnsupported   ErrorReason = "Unsupported"
 	ErrAlreadyExists ErrorReason = "AlreadyExists"
 	ErrTimeout       ErrorReason = "Timeout"
@@ -27,7 +28,7 @@ func Reason(err error) ErrorReason {
 			return v.Reason
 		}
 	}
-	return ErrUnknown
+	return ErrInternalError
 }
 
 func NewError(msg string, reason ErrorReason, args ...interface{}) error {
