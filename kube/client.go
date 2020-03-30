@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"sync"
 	"time"
@@ -27,9 +28,9 @@ type Client interface {
 	WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error
 	GetConfigMap(name string, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error)
-	ListPods(labelSelector string, opt kconfig.Opt) ([]corev1.Pod, error)
-	ListEndpoints(labelSelector string, opt kconfig.Opt) ([]corev1.Endpoints, error)
-	ListServices(labelSelector string, opt kconfig.Opt) ([]corev1.Service, error)
+	ListPods(selector labels.Selector, opt kconfig.Opt) ([]corev1.Pod, error)
+	ListEndpoints(selector labels.Selector, opt kconfig.Opt) ([]corev1.Endpoints, error)
+	ListServices(selector labels.Selector, opt kconfig.Opt) ([]corev1.Service, error)
 	DeleteConfigMap(name string, opt kconfig.Opt) error
 	UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	UpsertDeploy(dep *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
@@ -42,6 +43,8 @@ type Client interface {
 	GetEndpoints(name string, opt kconfig.Opt) (*corev1.Endpoints, error)
 	GetService(name string, opt kconfig.Opt) (*corev1.Service, error)
 	UpdateService(service *corev1.Service, opt kconfig.Opt) (*corev1.Service, error)
+
+	Api(context string) (kubernetes.Interface, error)
 }
 
 func NewClient() (Client, error) {
@@ -72,6 +75,10 @@ type client struct {
 	mapLock                    sync.RWMutex
 }
 
+func (c *client) Api(context string) (kubernetes.Interface, error) {
+	return c.Config.Api(context)
+}
+
 func (c *client) UpdateEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error) {
 	inter, err := c.Config.Api(opt.Context)
 	if err != nil {
@@ -99,13 +106,9 @@ func (c *client) InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-ch
 	return result, ch
 }
 
-func (c *client) ListPods(labelSelector string, opt kconfig.Opt) ([]corev1.Pod, error) {
+func (c *client) ListPods(selector labels.Selector, opt kconfig.Opt) ([]corev1.Pod, error) {
 	if c.informerRunning("pods") {
-		parsedLabelSelector, err := labels.Parse(labelSelector)
-		if err != nil {
-			return nil, err
-		}
-		eps, err := c.SharedInformerFactory.Core().V1().Pods().Lister().Pods(opt.Namespace).List(parsedLabelSelector)
+		eps, err := c.SharedInformerFactory.Core().V1().Pods().Lister().Pods(opt.Namespace).List(selector)
 		if err != nil {
 			return nil, err
 		}
@@ -119,7 +122,7 @@ func (c *client) ListPods(labelSelector string, opt kconfig.Opt) ([]corev1.Pod, 
 	if err != nil {
 		return nil, err
 	}
-	items, err := inter.CoreV1().Pods(opt.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
+	items, err := inter.CoreV1().Pods(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +191,9 @@ func (c *client) InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Eve
 	return result, ch
 }
 
-func (c *client) ListEndpoints(labelSelector string, opt kconfig.Opt) ([]corev1.Endpoints, error) {
+func (c *client) ListEndpoints(selector labels.Selector, opt kconfig.Opt) ([]corev1.Endpoints, error) {
 	if c.informerRunning("endpoints") {
-		parsedLabelSelector, err := labels.Parse(labelSelector)
-		if err != nil {
-			return nil, err
-		}
-		eps, err := c.SharedInformerFactory.Core().V1().Endpoints().Lister().Endpoints(opt.Namespace).List(parsedLabelSelector)
+		eps, err := c.SharedInformerFactory.Core().V1().Endpoints().Lister().Endpoints(opt.Namespace).List(selector)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +207,7 @@ func (c *client) ListEndpoints(labelSelector string, opt kconfig.Opt) ([]corev1.
 	if err != nil {
 		return nil, err
 	}
-	items, err := inter.CoreV1().Endpoints(opt.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
+	items, err := inter.CoreV1().Endpoints(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +223,7 @@ func (c *client) InformAndListServices(filter Filter) ([]corev1.Service, <-chan 
 	informer.AddEventHandler(handler)
 	c.initInformer("service", informer)
 	c.waitForSync(informer)
-	eps, _ := c.SharedInformerFactory.Core().V1().Services().Lister().List(labels.NewSelector())
+	eps, _ := c.SharedInformerFactory.Core().V1().Services().Lister().List(labels.Everything())
 	result := make([]corev1.Service, 0)
 	for _, e := range eps {
 		if filter(e) {
@@ -246,13 +245,9 @@ func (c *client) InformDeploy(filter Filter) <-chan watch.Event {
 	return ch
 }
 
-func (c *client) ListServices(labelSelector string, opt kconfig.Opt) ([]corev1.Service, error) {
+func (c *client) ListServices(selector labels.Selector, opt kconfig.Opt) ([]corev1.Service, error) {
 	if c.informerRunning("service") {
-		parsedLabelSelector, err := labels.Parse(labelSelector)
-		if err != nil {
-			return nil, err
-		}
-		eps, err := c.SharedInformerFactory.Core().V1().Services().Lister().Services(opt.Namespace).List(parsedLabelSelector)
+		eps, err := c.SharedInformerFactory.Core().V1().Services().Lister().Services(opt.Namespace).List(selector)
 		if err != nil {
 			return nil, err
 		}
@@ -266,7 +261,7 @@ func (c *client) ListServices(labelSelector string, opt kconfig.Opt) ([]corev1.S
 	if err != nil {
 		return nil, err
 	}
-	items, err := inter.CoreV1().Services(opt.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
+	items, err := inter.CoreV1().Services(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +449,7 @@ func (c *client) handlerFactory(filter Filter, caster func(obj interface{}) (run
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				if v, ok := caster(obj); len(ch) < buffer && ok {
+				if v, ok := caster(obj); ok {
 					ch <- watch.Event{
 						Type:   watch.Added,
 						Object: v,
@@ -489,7 +484,7 @@ func (c *client) initInformer(resource string, informer cache.SharedIndexInforme
 	if _, ok := c.informerHandlersByResource[resource]; !ok {
 		ch := make(chan struct{})
 		c.informerHandlersByResource[resource] = ch
-		informer.Run(ch)
+		go informer.Run(ch)
 		return
 	}
 }

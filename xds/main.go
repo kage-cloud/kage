@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/kage-cloud/kage/xds/snap"
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	xds "github.com/envoyproxy/go-control-plane/pkg/server"
@@ -27,7 +26,6 @@ func main() {
 	api.RegisterListenerDiscoveryServiceServer(grpcServer, server)
 
 	var err error
-	SnapClient, err = snap.NewStoreClient()
 	if err != nil {
 		panic(err)
 	}

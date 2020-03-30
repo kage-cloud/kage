@@ -18,7 +18,7 @@ type XdsService interface {
 
 type xdsService struct {
 	XdsEventHandler       XdsEventHandler       `inject:"XdsEventHandler"`
-	DeployWatchService    DeployWatchService    `inject:"DeployWatchService"`
+	DeployWatchService    WatchService          `inject:"WatchService"`
 	RouteFactory          factory.RouteFactory  `inject:"RouteFactory"`
 	StoreClient           snap.StoreClient      `inject:"StoreClient"`
 	StopperHandlerService StopperHandlerService `inject:"StopperHandlerService"`
@@ -36,7 +36,8 @@ func (x *xdsService) InitializeControlPlane(canary *model.Canary) error {
 	if x.controlPlaneExists(canary.TargetDeploy.Name) {
 		return except.NewError("a canary for %s already exists", except.ErrAlreadyExists, canary.TargetDeploy.Name)
 	}
-	handler := x.XdsEventHandler.DeployPodsEventHandler(canary.TargetDeploy)
+	targetHandler := x.XdsEventHandler.DeployPodsEventHandler(canary.TargetDeploy)
+	canaryHandler := x.XdsEventHandler.DeployPodsEventHandler(canary.CanaryDeploy)
 
 	serviceName := snaputil.GenServiceName(canary.TargetDeploy.Name)
 	routes := x.RouteFactory.FromPercentage(canary.Name, serviceName, canary.TrafficPercentage, model.TotalRoutingWeight)
@@ -45,7 +46,11 @@ func (x *xdsService) InitializeControlPlane(canary *model.Canary) error {
 		return err
 	}
 
-	err := x.DeployWatchService.DeploymentPods(canary.TargetDeploy, handler)
+	err := x.DeployWatchService.DeploymentPods(canary.TargetDeploy, targetHandler)
+	if err != nil {
+		return err
+	}
+	err = x.DeployWatchService.DeploymentPods(canary.CanaryDeploy, canaryHandler)
 	if err != nil {
 		return err
 	}

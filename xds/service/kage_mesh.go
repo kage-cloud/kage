@@ -2,16 +2,16 @@ package service
 
 import (
 	"fmt"
+	"github.com/eddieowens/axon"
 	"github.com/kage-cloud/kage/kube"
 	"github.com/kage-cloud/kage/kube/kconfig"
+	"github.com/kage-cloud/kage/kube/kubeutil"
 	"github.com/kage-cloud/kage/synchelpers"
 	"github.com/kage-cloud/kage/xds/factory"
 	"github.com/kage-cloud/kage/xds/model"
 	"github.com/kage-cloud/kage/xds/model/consts"
 	"github.com/kage-cloud/kage/xds/snap"
 	"github.com/kage-cloud/kage/xds/util"
-	"github.com/kage-cloud/kage/xds/util/kubeutil"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -27,19 +27,17 @@ type KageMeshService interface {
 }
 
 type kageMeshService struct {
-	KubeClient            kube.Client             `inject:"KubeClient"`
-	StoreClient           snap.StoreClient        `inject:"StoreClient"`
-	EnvoyStateService     EnvoyStateService       `inject:"EnvoyStateService"`
-	KageMeshFactory       factory.KageMeshFactory `inject:"KageMeshFactory"`
-	XdsService            XdsService              `inject:"XdsService"`
-	LockdownService       LockdownService         `inject:"LockdownService"`
-	StopperHandlerService StopperHandlerService   `inject:"StopperHandlerService"`
+	KubeClient        kube.Client             `inject:"KubeClient"`
+	StoreClient       snap.StoreClient        `inject:"StoreClient"`
+	EnvoyStateService EnvoyStateService       `inject:"EnvoyStateService"`
+	KageMeshFactory   factory.KageMeshFactory `inject:"KageMeshFactory"`
+	XdsService        XdsService              `inject:"XdsService"`
+	LockdownService   LockdownService         `inject:"LockdownService"`
+	StopperMap        synchelpers.StopperMap
 }
 
 func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
 	objKey := kubeutil.ObjectKey(spec.TargetDeploy)
-
-	k.StopperHandlerService.Stop(objKey, nil)
 
 	kageMeshName := util.GenKageMeshName(spec.TargetDeploy.Name)
 
@@ -53,12 +51,6 @@ func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
 
 	if err := k.XdsService.StopControlPlane(objKey); err != nil {
 		return err
-	}
-
-	if k.LockdownService.IsLockedDown(spec.TargetDeploy) {
-		if err := k.LockdownService.ReleaseDeploy(spec.TargetDeploy); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -91,9 +83,9 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 
 	objKey := kubeutil.ObjectKey(kageMeshDeploy)
 	stopper, errChan := synchelpers.NewErrChanStopper(func(err error) {
-		k.StopperHandlerService.Remove(objKey)
+		k.StopperMap.Remove(objKey)
 	})
-	k.StopperHandlerService.Add(objKey, stopper)
+	k.StopperMap.Add(objKey, stopper)
 
 	go func() {
 		for {
@@ -126,53 +118,12 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
-	if spec.LockdownTarget {
-		if err := k.LockdownService.LockdownDeploy(spec.Canary.TargetDeploy); err != nil {
-			return nil, err
-		}
-	}
-
 	return &model.KageMesh{
 		Name:                     kageMeshName,
 		Deploy:                   kageMeshDeploy,
 		CanaryTrafficPercentage:  spec.Canary.TrafficPercentage,
 		ServiceTrafficPercentage: model.TotalRoutingWeight,
 	}, nil
-}
-
-// Extract all ContainerPorts from Endpoints in eps which will route to ContainerPorts in toMatch.
-func (k *kageMeshService) findMatchingContainerPorts(toMatch []corev1.ContainerPort, eps []corev1.Endpoints) []corev1.ContainerPort {
-	toMatchByPort := map[int32][]corev1.ContainerPort{}
-	for _, tm := range toMatch {
-		v, ok := toMatchByPort[tm.ContainerPort]
-		if ok {
-			v = append(v, tm)
-		} else {
-			v = []corev1.ContainerPort{tm}
-		}
-	}
-	cps := make([]corev1.ContainerPort, 0)
-	for _, ep := range eps {
-		for _, ss := range ep.Subsets {
-			for _, p := range ss.Ports {
-				if _, ok := toMatchByPort[p.Port]; ok {
-					cps = append(cps, *util.ContainerPortFromEndpointPort(&p))
-				}
-			}
-		}
-	}
-
-	return cps
-}
-
-func (k *kageMeshService) aggContainerPorts(dep *appsv1.Deployment) []corev1.ContainerPort {
-	cps := make([]corev1.ContainerPort, 0)
-	for _, c := range dep.Spec.Template.Spec.Containers {
-		for _, cp := range c.Ports {
-			cps = append(cps, cp)
-		}
-	}
-	return cps
 }
 
 func (k *kageMeshService) Fetch(endpointsName string, opt kconfig.Opt) (*model.KageMesh, error) {
@@ -197,4 +148,10 @@ func (k *kageMeshService) Fetch(endpointsName string, opt kconfig.Opt) (*model.K
 		CanaryTrafficPercentage:  weight,
 		ServiceTrafficPercentage: model.TotalRoutingWeight - weight,
 	}, nil
+}
+
+func kageMeshFactory(_ axon.Injector, _ axon.Args) axon.Instance {
+	return axon.StructPtr(&kageMeshService{
+		StopperMap: synchelpers.NewStopperMap(),
+	})
 }

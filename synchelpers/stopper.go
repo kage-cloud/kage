@@ -2,6 +2,7 @@ package synchelpers
 
 type Stopper interface {
 	Stop(err error)
+	IsStopped() bool
 }
 
 type OnStopFunc func(err error)
@@ -24,10 +25,16 @@ func NewErrChanStopper(stopFunc OnStopFunc) (Stopper, chan error) {
 }
 
 type stopper struct {
-	onStop OnStopFunc
+	onStop    OnStopFunc
+	isStopped bool
 }
 
-func (s stopper) Stop(err error) {
+func (s *stopper) IsStopped() bool {
+	return s.isStopped
+}
+
+func (s *stopper) Stop(err error) {
+	s.isStopped = true
 	if s.onStop != nil {
 		s.onStop(err)
 	}
