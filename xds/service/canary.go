@@ -13,7 +13,7 @@ import (
 const CanaryServiceKey = "CanaryService"
 
 type CanaryService interface {
-	Create(spec *model.CanarySpec) (*model.Canary, error)
+	Create(spec *model.CreateCanarySpec) (*model.Canary, error)
 	Delete(spec *model.DeleteCanarySpec) error
 }
 
@@ -30,7 +30,7 @@ func (c *canaryService) Delete(spec *model.DeleteCanarySpec) error {
 	return nil
 }
 
-func (c *canaryService) Create(spec *model.CanarySpec) (*model.Canary, error) {
+func (c *canaryService) Create(spec *model.CreateCanarySpec) (*model.Canary, error) {
 	replicas := int32(1)
 	if spec.TargetDeploy.Spec.Replicas != nil {
 		replicas = *spec.TargetDeploy.Spec.Replicas

@@ -1,6 +1,10 @@
 package except
 
-import "fmt"
+import (
+	"fmt"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"net/http"
+)
 
 type ErrorReason string
 
@@ -29,6 +33,25 @@ func Reason(err error) ErrorReason {
 		}
 	}
 	return ErrInternalError
+}
+
+func ToHttpStatus(err error) int {
+	if errors.IsNotFound(err) {
+		return http.StatusNotFound
+	} else if errors.IsAlreadyExists(err) {
+		return http.StatusBadRequest
+	} else {
+		switch Reason(err) {
+		case ErrNotFound:
+			return http.StatusNotFound
+		case ErrAlreadyExists, ErrUnsupported, ErrConflict:
+			return http.StatusBadRequest
+		case ErrTimeout:
+			return http.StatusRequestTimeout
+		default:
+			return http.StatusInternalServerError
+		}
+	}
 }
 
 func NewError(msg string, reason ErrorReason, args ...interface{}) error {

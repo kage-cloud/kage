@@ -23,6 +23,10 @@ type config struct {
 	Interface kubernetes.Interface
 }
 
+type ConfigSpec struct {
+	ConfigPath string
+}
+
 func (c *config) Api(context string) (kubernetes.Interface, error) {
 	if c.Interface == nil {
 		conf, err := clientcmd.NewDefaultClientConfig(
@@ -41,13 +45,13 @@ func (c *config) Api(context string) (kubernetes.Interface, error) {
 	return c.Interface, nil
 }
 
-func NewConfigClient() (Config, error) {
+func NewConfigClient(spec ConfigSpec) (Config, error) {
 	confClient := new(config)
 
 	conf, err := rest.InClusterConfig()
 	if err != nil {
 		if err == rest.ErrNotInCluster {
-			conf, err := loadKubeConfig()
+			conf, err := loadKubeConfig(spec.ConfigPath)
 			confClient.ApiConfig = conf
 			if err != nil {
 				return nil, err
@@ -65,13 +69,16 @@ func NewConfigClient() (Config, error) {
 	return confClient, nil
 }
 
-func loadKubeConfig() (*api.Config, error) {
+func loadKubeConfig(configPath string) (*api.Config, error) {
 	hd, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
+	if configPath == "" {
+		configPath = path.Join(hd, ".kube", "config")
+	}
 	conf, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: path.Join(hd, ".kube", "config")},
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: configPath},
 		&clientcmd.ConfigOverrides{},
 	).RawConfig()
 

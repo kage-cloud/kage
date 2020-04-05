@@ -32,6 +32,8 @@ type StoreClient interface {
 
 	// Reload a singular Node ID from the persistent store.
 	Reload(nodeId string) error
+
+	SnapshotCache() cache.SnapshotCache
 }
 
 type storeClient struct {
@@ -47,6 +49,10 @@ type storeClient struct {
 	syncChan chan string
 
 	lock sync.RWMutex
+}
+
+func (s *storeClient) SnapshotCache() cache.SnapshotCache {
+	return s.Cache
 }
 
 func (s *storeClient) Reload(nodeId string) error {

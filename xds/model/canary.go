@@ -9,7 +9,7 @@ const (
 	TotalRoutingWeight = 100
 )
 
-type CanarySpec struct {
+type CreateCanarySpec struct {
 	TargetDeploy      *appsv1.Deployment
 	TrafficPercentage uint32
 	Opt               kconfig.Opt

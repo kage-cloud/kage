@@ -8,7 +8,7 @@ import (
 const KageServiceKey = "KageService"
 
 type KageService interface {
-	Create(spec *model.KageSpec) error
+	Create(spec *model.KageSpec) (*model.Kage, error)
 	Delete(spec *model.DeleteKageSpec) error
 }
 
@@ -46,14 +46,14 @@ func (k *kageService) Delete(spec *model.DeleteKageSpec) error {
 	return nil
 }
 
-func (k *kageService) Create(spec *model.KageSpec) error {
+func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 	opt := spec.Opt
 	target, err := k.KubeClient.GetDeploy(spec.TargetDeployName, opt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	canarySpec := &model.CanarySpec{
+	canarySpec := &model.CreateCanarySpec{
 		TargetDeploy:      target,
 		TrafficPercentage: spec.CanaryRoutingPercentage,
 		Opt:               opt,
@@ -61,7 +61,7 @@ func (k *kageService) Create(spec *model.KageSpec) error {
 
 	canary, err := k.CanaryService.Create(canarySpec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	kageMeshSpec := &model.KageMeshSpec{
@@ -70,10 +70,13 @@ func (k *kageService) Create(spec *model.KageSpec) error {
 		Opt:            opt,
 	}
 
-	_, err = k.KageMeshService.Create(kageMeshSpec)
+	kageMesh, err := k.KageMeshService.Create(kageMeshSpec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &model.Kage{
+		Mesh:   *kageMesh,
+		Canary: *canary,
+	}, nil
 }

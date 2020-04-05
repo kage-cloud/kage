@@ -12,3 +12,8 @@ type DeleteKageSpec struct {
 	Opt              kconfig.Opt
 	TargetDeployName string
 }
+
+type Kage struct {
+	Mesh   KageMesh
+	Canary Canary
+}

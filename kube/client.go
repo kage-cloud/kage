@@ -44,16 +44,16 @@ type Client interface {
 	GetService(name string, opt kconfig.Opt) (*corev1.Service, error)
 	UpdateService(service *corev1.Service, opt kconfig.Opt) (*corev1.Service, error)
 
-	Api(context string) (kubernetes.Interface, error)
+	Api() kubernetes.Interface
 }
 
-func NewClient() (Client, error) {
-	conf, err := kconfig.NewConfigClient()
+func NewClient(spec ClientSpec) (Client, error) {
+	conf, err := kconfig.NewConfigClient(spec.Config)
 	if err != nil {
 		return nil, err
 	}
 
-	apiClient, err := conf.Api("")
+	apiClient, err := conf.Api(spec.Context)
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +61,7 @@ func NewClient() (Client, error) {
 	fact := informers.NewSharedInformerFactoryWithOptions(apiClient, 0)
 
 	return &client{
+		Interface:                  apiClient,
 		Config:                     conf,
 		SharedInformerFactory:      fact,
 		informerHandlersByResource: map[string]chan struct{}{},
@@ -68,15 +69,21 @@ func NewClient() (Client, error) {
 	}, nil
 }
 
+type ClientSpec struct {
+	Config  kconfig.ConfigSpec
+	Context string
+}
+
 type client struct {
+	Interface                  kubernetes.Interface
 	Config                     kconfig.Config
 	SharedInformerFactory      informers.SharedInformerFactory
 	informerHandlersByResource map[string]chan struct{}
 	mapLock                    sync.RWMutex
 }
 
-func (c *client) Api(context string) (kubernetes.Interface, error) {
-	return c.Config.Api(context)
+func (c *client) Api() kubernetes.Interface {
+	return c.Interface
 }
 
 func (c *client) UpdateEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error) {
