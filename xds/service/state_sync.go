@@ -58,7 +58,7 @@ func (c *stateSyncService) Start() (synchelpers.Stopper, error) {
 		}
 	}()
 
-	return synchelpers.NewStopper(func(err error) {
+	return synchelpers.NewCallbackStopper(func(err error) {
 		onStop <- err
 	}), nil
 }

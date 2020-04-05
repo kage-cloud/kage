@@ -55,8 +55,10 @@ func (c *canaryService) Create(spec *model.CanarySpec) (*model.Canary, error) {
 	}
 
 	return &model.Canary{
-		TargetDeploy:      spec.TargetDeploy,
-		CanaryDeploy:      dep,
-		TrafficPercentage: spec.TrafficPercentage,
+		Name:                name,
+		TargetDeploy:        spec.TargetDeploy,
+		CanaryDeploy:        dep,
+		CanaryRoutingWeight: spec.TrafficPercentage,
+		TotalRoutingWeight:  model.TotalRoutingWeight,
 	}, nil
 }

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"github.com/kage-cloud/kage/kube"
 	"github.com/kage-cloud/kage/kube/kconfig"
@@ -18,8 +19,8 @@ import (
 const EndpointsControllerServiceKey = "EndpointsControllerService"
 
 type EndpointsControllerService interface {
-	StartWithBlacklistedEndpoints(blacklist labels.Set, opt kconfig.Opt) error
-	Stop() error
+	StartWithBlacklistedEndpoints(ctx context.Context, blacklist labels.Set, opt kconfig.Opt) error
+	Stop(blacklist labels.Set, opt kconfig.Opt) error
 }
 
 type endpointsControllerService struct {
@@ -29,17 +30,23 @@ type endpointsControllerService struct {
 	KubeClient      kube.Client     `inject:"KubeClient"`
 }
 
-func (e *endpointsControllerService) Stop() error {
-	if k.LockdownService.IsLockedDown(spec.TargetDeploy) {
-		if err := k.LockdownService.ReleaseDeploy(spec.TargetDeploy); err != nil {
+func (e *endpointsControllerService) Stop(blacklist labels.Set, opt kconfig.Opt) error {
+	svcs, err := e.KubeClient.ListServices(blacklist.AsSelectorPreValidated(), opt)
+	if err != nil {
+		return err
+	}
+	for _, s := range svcs {
+		if err := e.LockdownService.ReleaseService(&s, opt); err != nil {
 			return err
 		}
 	}
+
+	return nil
 }
 
-func (e *endpointsControllerService) StartWithBlacklistedEndpoints(blacklist labels.Set, opt kconfig.Opt) error {
+func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.Context, blacklist labels.Set, opt kconfig.Opt) error {
 	blacklistSelector := blacklist.AsSelectorPreValidated()
-	err := e.WatchService.Services(blacklist, time.Second, opt, &model.InformEventHandlerFuncs{
+	err := e.WatchService.Services(ctx, blacklist, time.Second, opt, &model.InformEventHandlerFuncs{
 		OnWatch: func(event watch.Event) bool {
 			svc, ok := event.Object.(*corev1.Service)
 			if !ok {
@@ -69,7 +76,7 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(blacklist lab
 			if !ok {
 				return except.NewError("a service list was not returned on the watcher: %v", except.ErrInternalError, svcList)
 			}
-			err := e.WatchService.Pods(blacklistSelector, 3*time.Second, opt, &model.InformEventHandlerFuncs{
+			err := e.WatchService.Pods(ctx, blacklistSelector, 3*time.Second, opt, &model.InformEventHandlerFuncs{
 				OnWatch: func(event watch.Event) bool {
 					switch event.Type {
 					case watch.Modified, watch.Added, watch.Deleted:

@@ -2,10 +2,10 @@ package service
 
 import (
 	"github.com/kage-cloud/kage/kube"
-	"github.com/kage-cloud/kage/kube/kconfig"
 	"github.com/kage-cloud/kage/xds/model"
-	"os"
 )
+
+const KageServiceKey = "KageService"
 
 type KageService interface {
 	Create(spec *model.KageSpec) error
@@ -19,9 +19,7 @@ type kageService struct {
 }
 
 func (k *kageService) Delete(spec *model.DeleteKageSpec) error {
-	opt := kconfig.Opt{
-		Namespace: os.Getenv("NAMESPACE"),
-	}
+	opt := spec.Opt
 	targetDeploy, err := k.KubeClient.GetDeploy(spec.TargetDeployName, opt)
 	if err != nil {
 		return err
@@ -49,9 +47,7 @@ func (k *kageService) Delete(spec *model.DeleteKageSpec) error {
 }
 
 func (k *kageService) Create(spec *model.KageSpec) error {
-	opt := kconfig.Opt{
-		Namespace: os.Getenv("NAMESPACE"),
-	}
+	opt := spec.Opt
 	target, err := k.KubeClient.GetDeploy(spec.TargetDeployName, opt)
 	if err != nil {
 		return err

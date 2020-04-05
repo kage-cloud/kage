@@ -21,8 +21,9 @@ type DeleteCanarySpec struct {
 }
 
 type Canary struct {
-	Name              string
-	TargetDeploy      *appsv1.Deployment
-	CanaryDeploy      *appsv1.Deployment
-	TrafficPercentage uint32
+	Name                string
+	TargetDeploy        *appsv1.Deployment
+	CanaryDeploy        *appsv1.Deployment
+	CanaryRoutingWeight uint32
+	TotalRoutingWeight  uint32
 }

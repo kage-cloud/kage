@@ -14,10 +14,10 @@ type EnvoyStateService interface {
 	FetchCanaryRouteWeight(state *store.EnvoyState) (uint32, error)
 }
 
-type envoystateService struct {
+type envoyStateService struct {
 }
 
-func (e *envoystateService) FetchCanaryRouteWeight(state *store.EnvoyState) (uint32, error) {
+func (e *envoyStateService) FetchCanaryRouteWeight(state *store.EnvoyState) (uint32, error) {
 	for _, r := range state.Routes {
 		action, ok := r.Action.(*route.Route_Route)
 		if ok {

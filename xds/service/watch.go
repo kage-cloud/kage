@@ -1,11 +1,10 @@
 package service
 
 import (
-	"github.com/eddieowens/axon"
+	"context"
 	"github.com/kage-cloud/kage/kube"
 	"github.com/kage-cloud/kage/kube/kconfig"
 	"github.com/kage-cloud/kage/kube/kubeutil"
-	"github.com/kage-cloud/kage/synchelpers"
 	"github.com/kage-cloud/kage/xds/model"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,20 +18,19 @@ import (
 const WatchServiceKey = "WatchService"
 
 type WatchService interface {
-	Pods(selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
+	Pods(ctx context.Context, selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 
 	// Watch services who's selectors match the specified labels
-	Services(ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
-	DeploymentPods(deploy *appsv1.Deployment, batchTime time.Duration, eventHandler ...model.InformEventHandler) error
-	DeploymentServices(deploy *appsv1.Deployment, batchTime time.Duration, eventHandler ...model.InformEventHandler) error
+	Services(ctx context.Context, ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
+	DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
+	DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
 }
 
 type watchService struct {
 	KubeClient kube.Client `inject:"KubeClient"`
-	StopperMap synchelpers.StopperMap
 }
 
-func (w *watchService) Services(ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
+func (w *watchService) Services(ctx context.Context, ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
 	svcs, wi := w.KubeClient.InformAndListServices(func(object metav1.Object) bool {
 		if v, ok := object.(*corev1.Service); ok {
 			return object.GetNamespace() == opt.Namespace && labels.SelectorFromSet(v.Spec.Selector).Matches(labels.Set(ls))
@@ -50,19 +48,12 @@ func (w *watchService) Services(ls map[string]string, batchTime time.Duration, o
 		}
 	}
 
-	objKey := labels.Set(ls).String() + opt.Namespace
-	stopper := synchelpers.NewStopper(func(err error) {
-		w.StopperMap.Remove(objKey)
-	})
-
-	w.createQueue(stopper, batchTime, wi, eventHandlers...)
-
-	w.StopperMap.Add(objKey, stopper)
+	w.createQueue(ctx, batchTime, wi, eventHandlers...)
 
 	return nil
 }
 
-func (w *watchService) Pods(selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
+func (w *watchService) Pods(ctx context.Context, selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
 	pods, wi := w.KubeClient.InformAndListPod(func(object metav1.Object) bool {
 		return object.GetNamespace() == opt.Namespace && selector.Matches(labels.Set(object.GetLabels()))
 	})
@@ -76,19 +67,12 @@ func (w *watchService) Pods(selector labels.Selector, batchTime time.Duration, o
 		}
 	}
 
-	objKey := selector.String() + opt.Namespace
-	stopper := synchelpers.NewStopper(func(err error) {
-		w.StopperMap.Remove(objKey)
-	})
-
-	w.createQueue(stopper, batchTime, wi, eventHandlers...)
-
-	w.StopperMap.Add(objKey, stopper)
+	w.createQueue(ctx, batchTime, wi, eventHandlers...)
 
 	return nil
 }
 
-func (w *watchService) DeploymentServices(deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error {
+func (w *watchService) DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error {
 	ns := kubeutil.DeploymentPodNamespace(deploy)
 
 	svcs, wi := w.KubeClient.InformAndListServices(func(object metav1.Object) bool {
@@ -108,18 +92,12 @@ func (w *watchService) DeploymentServices(deploy *appsv1.Deployment, batchTime t
 		}
 	}
 
-	objKey := kubeutil.ObjectKey(deploy)
-	stopper := synchelpers.NewStopper(func(err error) {
-		w.StopperMap.Remove(objKey)
-	})
+	w.createQueue(ctx, batchTime, wi, eventHandlers...)
 
-	w.createQueue(stopper, batchTime, wi, eventHandlers...)
-
-	w.StopperMap.Add(objKey, stopper)
 	return nil
 }
 
-func (w *watchService) DeploymentPods(deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error {
+func (w *watchService) DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error {
 	selector, err := metav1.LabelSelectorAsSelector(deploy.Spec.Selector)
 	if err != nil {
 		return err
@@ -128,48 +106,45 @@ func (w *watchService) DeploymentPods(deploy *appsv1.Deployment, batchTime time.
 	selector.String()
 	ns := kubeutil.DeploymentPodNamespace(deploy)
 
-	return w.Pods(selector, batchTime, kconfig.Opt{Namespace: ns}, eventHandlers...)
+	return w.Pods(ctx, selector, batchTime, kconfig.Opt{Namespace: ns}, eventHandlers...)
 }
 
-func (w *watchService) handleItemLoop(stopper synchelpers.Stopper, queue workqueue.Interface, handlers ...model.InformEventHandler) {
+func (w *watchService) handleItemLoop(ctx context.Context, queue workqueue.Interface, handlers ...model.InformEventHandler) {
 	shutdown := false
 	loopTimer := time.NewTimer(time.Second)
 	for !shutdown {
-		<-loopTimer.C
-
-		var item interface{}
-		item, shutdown = queue.Get()
-		if v, ok := item.(watch.Event); ok {
-			for _, h := range handlers {
-				if !h.OnWatchEvent(v) {
-					stopper.Stop(nil)
+		select {
+		case <-loopTimer.C:
+			var item interface{}
+			item, shutdown = queue.Get()
+			if v, ok := item.(watch.Event); ok {
+				for _, h := range handlers {
+					if !h.OnWatchEvent(v) {
+						return
+					}
 				}
 			}
-		}
-		if !shutdown {
-			shutdown = stopper.IsStopped()
+		case <-ctx.Done():
+			shutdown = true
 		}
 	}
 }
 
-func (w *watchService) createQueue(stopper synchelpers.Stopper, batchTime time.Duration, watchChan <-chan watch.Event, handlers ...model.InformEventHandler) {
+func (w *watchService) createQueue(ctx context.Context, batchTime time.Duration, watchChan <-chan watch.Event, handlers ...model.InformEventHandler) {
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter())
-	go w.handleItemLoop(stopper, queue, handlers...)
-	go w.queueItemLoop(stopper, batchTime, queue, watchChan)
+	go w.handleItemLoop(ctx, queue, handlers...)
+	go w.queueItemLoop(ctx, batchTime, queue, watchChan)
 }
 
-func (w *watchService) queueItemLoop(stopper synchelpers.Stopper, batchTime time.Duration, queue workqueue.RateLimitingInterface, watchChan <-chan watch.Event) {
+func (w *watchService) queueItemLoop(ctx context.Context, batchTime time.Duration, queue workqueue.RateLimitingInterface, watchChan <-chan watch.Event) {
 	loopTimer := time.NewTimer(time.Second)
-	for !stopper.IsStopped() {
-		<-loopTimer.C
-
-		e := <-watchChan
-		queue.AddAfter(e, batchTime)
+	for {
+		select {
+		case <-loopTimer.C:
+			e := <-watchChan
+			queue.AddAfter(e, batchTime)
+		case <-ctx.Done():
+			return
+		}
 	}
-}
-
-func deployWatchServiceFactory(_ axon.Injector, _ axon.Args) axon.Instance {
-	return axon.StructPtr(&watchService{
-		StopperMap: synchelpers.NewStopperMap(),
-	})
 }

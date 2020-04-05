@@ -17,27 +17,27 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 )
 
-const XdsEventHandlerService = "XdsEventHandlerService"
+const XdsEventHandlerServiceKey = "XdsEventHandlerService"
 
 type XdsEventHandler interface {
 	DeployPodsEventHandler(deploy ...*appsv1.Deployment) model.InformEventHandler
 }
 
-type xdsWatcher struct {
+type xdsEventHandler struct {
 	KubeClient      kube.Client             `inject:"KubeClient"`
 	EndpointFactory factory.EndpointFactory `inject:"EndpointFactory"`
 	ListenerFactory factory.ListenerFactory `inject:"ListenerFactory"`
 	StoreClient     snap.StoreClient        `inject:"StoreClient"`
 }
 
-func (x *xdsWatcher) DeployPodsEventHandler(deploy ...*appsv1.Deployment) model.InformEventHandler {
+func (x *xdsEventHandler) DeployPodsEventHandler(deploy ...*appsv1.Deployment) model.InformEventHandler {
 	return &model.InformEventHandlerFuncs{
 		OnWatch: x.onWatch(deploy...),
 		OnList:  x.onList(deploy...),
 	}
 }
 
-func (x *xdsWatcher) onList(deploy ...*appsv1.Deployment) model.OnListEventFunc {
+func (x *xdsEventHandler) onList(deploy ...*appsv1.Deployment) model.OnListEventFunc {
 	return func(obj runtime.Object) error {
 		if v, ok := obj.(*corev1.PodList); ok {
 			for _, d := range deploy {
@@ -52,7 +52,7 @@ func (x *xdsWatcher) onList(deploy ...*appsv1.Deployment) model.OnListEventFunc 
 	}
 }
 
-func (x *xdsWatcher) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEventFunc {
+func (x *xdsEventHandler) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEventFunc {
 	return func(event watch.Event) {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
 			switch event.Type {
@@ -74,7 +74,7 @@ func (x *xdsWatcher) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEventFun
 	}
 }
 
-func (x *xdsWatcher) removePod(key string, pod *corev1.Pod) error {
+func (x *xdsEventHandler) removePod(key string, pod *corev1.Pod) error {
 	state, err := x.StoreClient.Get(key)
 	if err != nil {
 		return err
@@ -110,7 +110,7 @@ func (x *xdsWatcher) removePod(key string, pod *corev1.Pod) error {
 	return nil
 }
 
-func (x *xdsWatcher) storePod(key string, pod *corev1.Pod) error {
+func (x *xdsEventHandler) storePod(key string, pod *corev1.Pod) error {
 	state, err := x.StoreClient.Get(key)
 	if err != nil {
 		return err
