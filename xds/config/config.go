@@ -29,8 +29,9 @@ type Server struct {
 }
 
 type Kube struct {
-	Config  string `mapstructure:"config"`
-	Context string `mapstructure:"context"`
+	Config    string `mapstructure:"config"`
+	Context   string `mapstructure:"context"`
+	Namespace string `mapstructure:"namespace"`
 }
 
 type Xds struct {

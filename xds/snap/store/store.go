@@ -2,11 +2,11 @@ package store
 
 type Filter func(d interface{}) bool
 
-type EnvoyStateStore interface {
+type EnvoyStatePersistentStore interface {
 	Save(state *EnvoyState) (SaveHandler, error)
-	Fetch(name string) (*EnvoyState, error)
+	Fetch(nodeId string) (*EnvoyState, error)
 	FetchAll() ([]EnvoyState, error)
-	Delete(name string) error
+	Delete(nodeId string) error
 }
 
 type SaveHandler interface {

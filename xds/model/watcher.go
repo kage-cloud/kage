@@ -12,7 +12,9 @@ type InformEventHandlerFuncs struct {
 
 func (i *InformEventHandlerFuncs) OnWatchEvent(event watch.Event) bool {
 	if i.OnWatch != nil {
-		i.OnWatch(event)
+		return i.OnWatch(event)
+	} else {
+		return false
 	}
 }
 

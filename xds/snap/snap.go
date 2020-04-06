@@ -10,9 +10,8 @@ import (
 	"github.com/kage-cloud/kage/xds/except"
 	"github.com/kage-cloud/kage/xds/snap/store"
 	"sync"
+	"time"
 )
-
-const StoreClientKey = "StoreClient"
 
 // Thread-safe client which owns and maintains the Envoy Snapshot cache. All EnvoyStates are backed up by a persistent
 // storage and will be saved to persistent storage on every write. By default, the persistent storage are Kubernetes
@@ -41,7 +40,7 @@ type storeClient struct {
 	Cache cache.SnapshotCache
 
 	// The persistent storer for the EnvoyStates.
-	Store store.EnvoyStateStore
+	PersistentStore store.EnvoyStatePersistentStore
 
 	// EnvoyStates indexed by the node ID.
 	CurrentStates map[string]store.EnvoyState
@@ -56,7 +55,7 @@ func (s *storeClient) SnapshotCache() cache.SnapshotCache {
 }
 
 func (s *storeClient) Reload(nodeId string) error {
-	state, err := s.Store.Fetch(nodeId)
+	state, err := s.PersistentStore.Fetch(nodeId)
 	if err != nil {
 		return err
 	}
@@ -98,7 +97,7 @@ func (s *storeClient) Delete(nodeId string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if err := s.Store.Delete(nodeId); err != nil {
+	if err := s.PersistentStore.Delete(nodeId); err != nil {
 		fmt.Printf("Failed to delete %s from the persistent store: %s", nodeId, err.Error())
 	}
 
@@ -110,7 +109,7 @@ func (s *storeClient) Delete(nodeId string) error {
 }
 
 func (s *storeClient) Load() error {
-	states, err := s.Store.FetchAll()
+	states, err := s.PersistentStore.FetchAll()
 	if err != nil {
 		return err
 	}
@@ -154,14 +153,15 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 	endpoints, endpointResources := s.endpoints(prevState, state.Endpoints)
 
 	compositeState := &store.EnvoyState{
-		NodeId:      state.NodeId,
-		UuidVersion: uuid.New().String(),
-		Listeners:   listeners,
-		Routes:      routes,
-		Endpoints:   endpoints,
+		NodeId:               state.NodeId,
+		UuidVersion:          uuid.New().String(),
+		CreationTimestampUtc: time.Now().UTC(),
+		Listeners:            listeners,
+		Routes:               routes,
+		Endpoints:            endpoints,
 	}
 
-	handler, err := s.Store.Save(compositeState)
+	handler, err := s.PersistentStore.Save(compositeState)
 	if err != nil {
 		return err
 	}
@@ -219,20 +219,19 @@ func (s *storeClient) listeners(prevState *store.EnvoyState, listeners []api.Lis
 	return listeners, resources
 }
 
+type StoreClientSpec struct {
+	PersistentStore store.EnvoyStatePersistentStore
+}
+
 // Create a new StoreClient to save the EnvoyStates and update the Envoy Snapshot cache.
-func NewStoreClient() (StoreClient, error) {
+func NewStoreClient(spec *StoreClientSpec) (StoreClient, error) {
 	snapshotCache := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
 
-	kubeStore, err := store.NewKubeStore()
-	if err != nil {
-		return nil, err
-	}
-
 	sc := &storeClient{
-		Cache:         snapshotCache,
-		Store:         kubeStore,
-		CurrentStates: map[string]store.EnvoyState{},
-		lock:          sync.RWMutex{},
+		Cache:           snapshotCache,
+		PersistentStore: spec.PersistentStore,
+		CurrentStates:   map[string]store.EnvoyState{},
+		lock:            sync.RWMutex{},
 	}
 
 	if err := sc.Load(); err != nil {

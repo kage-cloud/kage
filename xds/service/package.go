@@ -5,6 +5,8 @@ import (
 	"github.com/kage-cloud/kage/kube"
 	"github.com/kage-cloud/kage/kube/kconfig"
 	"github.com/kage-cloud/kage/xds/config"
+	"github.com/kage-cloud/kage/xds/snap"
+	"github.com/kage-cloud/kage/xds/snap/store"
 )
 
 type Package struct {
@@ -12,8 +14,12 @@ type Package struct {
 
 const KubeClientKey = "KubeClient"
 
+const PersistentEnvoyStateStoreKey = "PersistentEnvoyStateStore"
+
+const StoreClientKey = "StoreClient"
+
 func kubeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
-	conf := inj.GetStructPtr("Config").(*config.Config)
+	conf := inj.GetStructPtr(config.ConfigKey).(*config.Config)
 	spec := kube.ClientSpec{
 		Config: kconfig.ConfigSpec{
 			ConfigPath: conf.Kube.Config,
@@ -26,6 +32,41 @@ func kubeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
 		panic(err)
 	}
 	return axon.StructPtr(k)
+}
+
+func persistentEnvoyStoreFactory(inj axon.Injector, _ axon.Args) axon.Instance {
+	conf := inj.GetStructPtr(config.ConfigKey).(*config.Config)
+	var persStore store.EnvoyStatePersistentStore
+	if conf.Kube.Namespace == "" {
+		client := inj.GetStructPtr(KubeClientKey).(kube.Client)
+		spec := &store.KubeStoreSpec{
+			Interface: client.Api(),
+			Namespace: conf.Kube.Namespace,
+		}
+		var err error
+		persStore, err = store.NewKubeStore(spec)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		persStore = store.NewInMemoryStore()
+	}
+
+	return axon.StructPtr(persStore)
+}
+
+func storeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
+	persStore := inj.GetStructPtr(PersistentEnvoyStateStoreKey).(store.EnvoyStatePersistentStore)
+	spec := &snap.StoreClientSpec{
+		PersistentStore: persStore,
+	}
+
+	s, err := snap.NewStoreClient(spec)
+	if err != nil {
+		panic(err)
+	}
+
+	return axon.StructPtr(s)
 }
 
 func (p *Package) Bindings() []axon.Binding {
@@ -41,5 +82,7 @@ func (p *Package) Bindings() []axon.Binding {
 		axon.Bind(KubeClientKey).To().Factory(kubeClientFactory).WithoutArgs(),
 		axon.Bind(LockdownServiceKey).To().Factory(lockDownServiceFactory).WithoutArgs(),
 		axon.Bind(KageMeshServiceKey).To().Factory(kageMeshFactory).WithoutArgs(),
+		axon.Bind(PersistentEnvoyStateStoreKey).To().Factory(persistentEnvoyStoreFactory).WithoutArgs(),
+		axon.Bind(StoreClientKey).To().Factory(storeClientFactory).WithoutArgs(),
 	}
 }

@@ -3,50 +3,48 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/kage-cloud/kage/kube"
-	"github.com/kage-cloud/kage/kube/kconfig"
 	"github.com/kage-cloud/kage/xds/model/consts"
+	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"os"
+	"k8s.io/client-go/kubernetes"
 )
 
-func NewKubeStore() (EnvoyStateStore, error) {
-	kubeClient, err := kube.NewClient()
-	if err != nil {
-		return nil, err
-	}
+type KubeStoreSpec struct {
+	Interface kubernetes.Interface
+	Namespace string
+}
 
+func NewKubeStore(spec *KubeStoreSpec) (EnvoyStatePersistentStore, error) {
 	return &kubeStore{
-		KubeClient: kubeClient,
+		Interface: spec.Interface,
+		Namespace: spec.Namespace,
 	}, nil
 }
 
 type kubeStore struct {
-	KubeClient kube.Client
+	Interface kubernetes.Interface
+	Namespace string
 }
 
 func (k *kubeStore) Delete(name string) error {
-	namespace := os.Getenv("NAMESPACE")
-
-	return k.KubeClient.DeleteConfigMap(name, kconfig.Opt{Namespace: namespace})
+	return k.Interface.CoreV1().ConfigMaps(k.Namespace).Delete(name, &metav1.DeleteOptions{})
 }
 
 func (k *kubeStore) FetchAll() ([]EnvoyState, error) {
-	namespace := os.Getenv("NAMESPACE")
-
 	lo := metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("%s=%s", consts.LabelKeyResource, consts.LabelValueResourceSnapshot),
 	}
 
-	cms, err := k.KubeClient.ListConfigMaps(lo, kconfig.Opt{Namespace: namespace})
+	cms, err := k.Interface.CoreV1().ConfigMaps(k.Namespace).List(lo)
 	if err != nil {
 		return nil, err
 	}
 
-	states := make([]EnvoyState, len(cms))
+	states := make([]EnvoyState, len(cms.Items))
 
-	for i, c := range cms {
+	for i, c := range cms.Items {
 		es, err := k.configMapToEnvoyState(&c)
 		if err != nil {
 			return nil, err
@@ -63,12 +61,10 @@ func (k *kubeStore) Save(state *EnvoyState) (SaveHandler, error) {
 		return nil, err
 	}
 
-	namespace := os.Getenv("NAMESPACE")
-
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      state.NodeId,
-			Namespace: namespace,
+			Namespace: k.Namespace,
 			Labels: map[string]string{
 				consts.LabelKeyDomain:   consts.Domain,
 				consts.LabelKeyResource: consts.LabelValueResourceSnapshot,
@@ -79,20 +75,23 @@ func (k *kubeStore) Save(state *EnvoyState) (SaveHandler, error) {
 		},
 	}
 
-	opt := kconfig.Opt{Namespace: namespace}
+	prevCm, err := k.Interface.CoreV1().ConfigMaps(k.Namespace).Get(state.NodeId, metav1.GetOptions{})
+	if err != nil {
+		log.WithField("name", state.NodeId).
+			WithField("namespace", k.Namespace).
+			Debug("No previous configmap found")
+	}
 
-	cm, err = k.KubeClient.UpsertConfigMap(cm, opt)
+	cm, err = upsertConfigMap(k.Interface, cm, k.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewKubeSaveHandler(cm, k.KubeClient), nil
+	return NewKubeSaveHandler(prevCm, cm, k.Interface), nil
 }
 
 func (k *kubeStore) Fetch(name string) (*EnvoyState, error) {
-	namespace := os.Getenv("NAMESPACE")
-
-	cm, err := k.KubeClient.GetConfigMap(name, kconfig.Opt{Namespace: namespace})
+	cm, err := k.Interface.CoreV1().ConfigMaps(k.Namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -113,18 +112,37 @@ func (k *kubeStore) configMapToEnvoyState(cm *corev1.ConfigMap) (*EnvoyState, er
 	return es, nil
 }
 
-func NewKubeSaveHandler(cm *corev1.ConfigMap, client kube.Client) SaveHandler {
+func upsertConfigMap(api kubernetes.Interface, cm *corev1.ConfigMap, namespace string) (*corev1.ConfigMap, error) {
+	out, err := api.CoreV1().ConfigMaps(namespace).Create(cm)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			return api.CoreV1().ConfigMaps(namespace).Update(cm)
+		} else {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func NewKubeSaveHandler(prevCm, cm *corev1.ConfigMap, client kubernetes.Interface) SaveHandler {
 	return &kubeSaveHandler{
-		prevConfigMap: cm,
-		client:        client,
+		cm:            cm,
+		prevConfigMap: prevCm,
+		api:           client,
 	}
 }
 
 type kubeSaveHandler struct {
 	prevConfigMap *corev1.ConfigMap
-	client        kube.Client
+	cm            *corev1.ConfigMap
+	api           kubernetes.Interface
 }
 
 func (k *kubeSaveHandler) Revert() error {
-	return k.client.DeleteConfigMap(k.prevConfigMap.Name, kconfig.Opt{Namespace: k.prevConfigMap.Namespace})
+	if k.prevConfigMap == nil {
+		return k.api.CoreV1().ConfigMaps(k.cm.Namespace).Delete(k.cm.Name, nil)
+	} else {
+		_, err := upsertConfigMap(k.api, k.prevConfigMap, k.prevConfigMap.Namespace)
+		return err
+	}
 }
