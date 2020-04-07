@@ -9,7 +9,7 @@ type Package struct {
 
 func (p *Package) Bindings() []axon.Binding {
 	return []axon.Binding{
-		axon.Bind(TrafficControllerKey).To().StructPtr(new(trafficController)),
-		axon.Bind(ControllersKey).To().Keys(TrafficControllerKey),
+		axon.Bind(CanaryControllerKey).To().StructPtr(new(canaryController)),
+		axon.Bind(ControllersKey).To().Keys(CanaryControllerKey),
 	}
 }

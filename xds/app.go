@@ -7,6 +7,7 @@ import (
 	"github.com/kage-cloud/kage/xds/controller"
 	"github.com/kage-cloud/kage/xds/controlplane"
 	"github.com/kage-cloud/kage/xds/except"
+	"github.com/kage-cloud/kage/xds/service"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
@@ -19,9 +20,10 @@ type App interface {
 }
 
 type app struct {
-	Controllers       []axon.Instance    `inject:"Controllers"`
-	Config            *config.Config     `inject:"Config"`
-	EnvoyControlPlane controlplane.Envoy `inject:"EnvoyControlPlane"`
+	Controllers       []axon.Instance          `inject:"Controllers"`
+	Config            *config.Config           `inject:"Config"`
+	EnvoyControlPlane controlplane.Envoy       `inject:"EnvoyControlPlane"`
+	StateSyncService  service.StateSyncService `inject:"StateSyncService"`
 }
 
 func (a *app) Start() error {
@@ -40,6 +42,10 @@ func (a *app) Start() error {
 	log.SetLevel(logLvl)
 
 	if err := a.EnvoyControlPlane.StartAsync(); err != nil {
+		return err
+	}
+
+	if err := a.StateSyncService.Start(); err != nil {
 		return err
 	}
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	endpointv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
-	"github.com/kage-cloud/kage/kube"
 	"github.com/kage-cloud/kage/kube/kubeutil"
 	"github.com/kage-cloud/kage/xds/factory"
 	"github.com/kage-cloud/kage/xds/model"
@@ -24,7 +23,6 @@ type XdsEventHandler interface {
 }
 
 type xdsEventHandler struct {
-	KubeClient      kube.Client             `inject:"KubeClient"`
 	EndpointFactory factory.EndpointFactory `inject:"EndpointFactory"`
 	ListenerFactory factory.ListenerFactory `inject:"ListenerFactory"`
 	StoreClient     snap.StoreClient        `inject:"StoreClient"`
@@ -53,7 +51,7 @@ func (x *xdsEventHandler) onList(deploy ...*appsv1.Deployment) model.OnListEvent
 }
 
 func (x *xdsEventHandler) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEventFunc {
-	return func(event watch.Event) {
+	return func(event watch.Event) bool {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
 			switch event.Type {
 			case watch.Error, watch.Deleted:
@@ -71,6 +69,7 @@ func (x *xdsEventHandler) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEve
 				}
 			}
 		}
+		return true
 	}
 }
 
@@ -151,6 +150,6 @@ func (x *xdsEventHandler) storePod(key string, pod *corev1.Pod) error {
 		if err != nil {
 			return err
 		}
-		return nil
 	}
+	return nil
 }

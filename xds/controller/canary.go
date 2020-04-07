@@ -7,6 +7,8 @@ import (
 	"net/http"
 )
 
+const CanaryControllerKey = "CanaryController"
+
 type CanaryController interface {
 	Controller
 	Create(ctx echo.Context) error
@@ -48,12 +50,12 @@ func (c *canaryController) Delete(ctx echo.Context) error {
 func (c *canaryController) Routes() []Route {
 	return []Route{
 		{
-			Path:    "/",
+			Path:    "/:namespace",
 			Method:  http.MethodPost,
 			Handler: c.Create,
 		},
 		{
-			Path:    "/:name",
+			Path:    "/:namespace/:name",
 			Method:  http.MethodDelete,
 			Handler: c.Delete,
 		},

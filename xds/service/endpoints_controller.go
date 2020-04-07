@@ -54,11 +54,7 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 			}
 			switch event.Type {
 			case watch.Deleted:
-				kapi, err := e.KubeClient.Api(opt.Context)
-				if err != nil {
-					fmt.Println("failed to get the kube client api for context", opt.Context, ":", err.Error())
-					return false
-				}
+				kapi := e.KubeClient.Api()
 				if err := kapi.CoreV1().Endpoints(opt.Namespace).Delete(svc.Name, &metav1.DeleteOptions{}); err != nil {
 					fmt.Println("failed to delete endpoint", svc.Name, "in", opt.Namespace, ":", err.Error())
 					return false

@@ -3,7 +3,6 @@ package service
 import (
 	"fmt"
 	"github.com/kage-cloud/kage/kube"
-	"github.com/kage-cloud/kage/synchelpers"
 	"github.com/kage-cloud/kage/xds/model/consts"
 	"github.com/kage-cloud/kage/xds/snap"
 	"github.com/kage-cloud/kage/xds/snap/snaputil"
@@ -16,7 +15,7 @@ import (
 const StateSyncServiceKey = "StateSyncService"
 
 type StateSyncService interface {
-	Start() (synchelpers.Stopper, error)
+	Start() error
 }
 
 type stateSyncService struct {
@@ -24,7 +23,7 @@ type stateSyncService struct {
 	StoreClient snap.StoreClient `inject:"StoreClient"`
 }
 
-func (c *stateSyncService) Start() (synchelpers.Stopper, error) {
+func (c *stateSyncService) Start() error {
 	selector := labels.SelectorFromSet(map[string]string{
 		consts.LabelKeyResource: consts.LabelValueResourceSnapshot,
 	})
@@ -58,7 +57,5 @@ func (c *stateSyncService) Start() (synchelpers.Stopper, error) {
 		}
 	}()
 
-	return synchelpers.NewCallbackStopper(func(err error) {
-		onStop <- err
-	}), nil
+	return nil
 }

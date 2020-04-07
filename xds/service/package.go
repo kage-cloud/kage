@@ -79,6 +79,7 @@ func (p *Package) Bindings() []axon.Binding {
 		axon.Bind(XdsServiceKey).To().StructPtr(new(xdsService)),
 		axon.Bind(WatchServiceKey).To().StructPtr(new(watchService)),
 		axon.Bind(CanaryControllerServiceKey).To().StructPtr(new(canaryControllerService)),
+		axon.Bind(StateSyncServiceKey).To().StructPtr(new(stateSyncService)),
 		axon.Bind(KubeClientKey).To().Factory(kubeClientFactory).WithoutArgs(),
 		axon.Bind(LockdownServiceKey).To().Factory(lockDownServiceFactory).WithoutArgs(),
 		axon.Bind(KageMeshServiceKey).To().Factory(kageMeshFactory).WithoutArgs(),
