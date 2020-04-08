@@ -10,13 +10,14 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/util"
 	"github.com/kage-cloud/kage/xds/pkg/util/envoyutil"
+	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 )
 
-const XdsEventHandlerServiceKey = "XdsEventHandlerService"
+const XdsEventHandlerKey = "XdsEventHandler"
 
 type XdsEventHandler interface {
 	DeployPodsEventHandler(deploy ...*appsv1.Deployment) model.InformEventHandler
@@ -57,14 +58,20 @@ func (x *xdsEventHandler) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEve
 			case watch.Error, watch.Deleted:
 				for _, d := range deploy {
 					if err := x.removePod(kubeutil.ObjectKey(d), pod); err != nil {
-						fmt.Println("Failed to set from pod", pod.Name, ":", err.Error())
+						log.WithField("name", pod.Name).
+							WithField("namespace", pod.Namespace).
+							WithError(err).
+							Error("Failed to remove pod from control plane.")
 					}
 				}
 				break
 			case watch.Modified, watch.Added:
 				for _, d := range deploy {
 					if err := x.storePod(kubeutil.ObjectKey(d), pod); err != nil {
-						fmt.Println("Failed to set from pod", pod.Name, ":", err.Error())
+						log.WithField("name", pod.Name).
+							WithField("namespace", pod.Namespace).
+							WithError(err).
+							Error("Failed to add pod to control plane.")
 					}
 				}
 			}

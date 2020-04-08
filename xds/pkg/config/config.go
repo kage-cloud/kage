@@ -3,7 +3,7 @@ package config
 import (
 	"bytes"
 	"github.com/eddieowens/axon"
-	"github.com/labstack/gommon/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 	"os"
@@ -35,7 +35,8 @@ type Kube struct {
 }
 
 type Xds struct {
-	Port uint16 `mapstructure:"port"`
+	Port    uint16 `mapstructure:"port"`
+	Address string `mapstructure:"address"`
 }
 
 func defaultConfig() *Config {
@@ -59,16 +60,20 @@ func configFactory(_ axon.Injector, _ axon.Args) axon.Instance {
 		panic(err)
 	}
 
-	configPath := os.Getenv("KAGE_CONFIG_PATH")
+	configPath := os.Getenv("KUBE_CONFIG_PATH")
 	v.SetConfigFile(configPath)
 	if err := v.MergeInConfig(); err != nil {
-		panic(err)
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.WithField("path", configPath).WithError(err).Debug("Failed to load config file")
+		} else {
+			panic(err)
+		}
 	}
 
 	v.AutomaticEnv()
 
-	config := Config{}
-	if err := v.Unmarshal(&config); err != nil {
+	config := &Config{}
+	if err := v.Unmarshal(config); err != nil {
 		log.Fatal(err)
 	}
 

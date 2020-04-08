@@ -10,14 +10,14 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
-	appsv1 "k8s.io/api/apps/v1"
+	log "github.com/sirupsen/logrus"
 )
 
 const XdsServiceKey = "XdsService"
 
 type XdsService interface {
 	StartControlPlane(ctx context.Context, canary *model.Canary) error
-	StopControlPlane(targetDeploy *appsv1.Deployment) error
+	StopControlPlane(canary *model.Canary) error
 	SetRoutingWeight(routingSpec *xds.RoutingSpec) error
 }
 
@@ -45,7 +45,7 @@ func (x *xdsService) SetRoutingWeight(routingSpec *xds.RoutingSpec) error {
 	routes := x.RouteFactory.FromPercentage(routingSpec.CanaryName, serviceName, routingSpec.CanaryRoutingWeight, routingSpec.TotalRoutingWeight-routingSpec.CanaryRoutingWeight)
 
 	state := &store.EnvoyState{
-		NodeId: serviceName,
+		NodeId: routingSpec.CanaryName,
 		Routes: routes,
 	}
 
@@ -53,10 +53,18 @@ func (x *xdsService) SetRoutingWeight(routingSpec *xds.RoutingSpec) error {
 }
 
 func (x *xdsService) StartControlPlane(ctx context.Context, canary *model.Canary) error {
-	if x.controlPlaneExists(canary.TargetDeploy.Name) {
-		return except.NewError("a canary for %s already exists", except.ErrAlreadyExists, canary.TargetDeploy.Name)
+	if x.controlPlaneExists(kubeutil.ObjectKey(canary.CanaryDeploy)) {
+		return except.NewError("a canary called %s already exists", except.ErrAlreadyExists, canary.Name)
 	}
-	targetHandler := x.XdsEventHandler.DeployPodsEventHandler(canary.TargetDeploy)
+
+	if x.controlPlaneExists(kubeutil.ObjectKey(canary.TargetDeploy)) {
+		log.WithField("name", canary.TargetDeploy.Name).WithField("namespace", canary.TargetDeploy.Namespace).Debug("Already managed by control plane.")
+	} else {
+		targetHandler := x.XdsEventHandler.DeployPodsEventHandler(canary.TargetDeploy)
+		if err := x.WatchService.DeploymentPods(ctx, canary.TargetDeploy, 1, targetHandler); err != nil {
+			return err
+		}
+	}
 	canaryHandler := x.XdsEventHandler.DeployPodsEventHandler(canary.CanaryDeploy)
 
 	routingSpec := &xds.RoutingSpec{
@@ -69,18 +77,16 @@ func (x *xdsService) StartControlPlane(ctx context.Context, canary *model.Canary
 		return err
 	}
 
-	if err := x.WatchService.DeploymentPods(ctx, canary.TargetDeploy, 1, targetHandler); err != nil {
-		return err
-	}
-
 	if err := x.WatchService.DeploymentPods(ctx, canary.CanaryDeploy, 1, canaryHandler); err != nil {
 		return err
 	}
 
+	log.WithField("name", canary.CanaryDeploy.Name).WithField("namespace", canary.CanaryDeploy.Name).Debug("Added canary to control plane.")
+
 	return nil
 }
 
-func (x *xdsService) controlPlaneExists(targetDeployName string) bool {
-	_, err := x.StoreClient.Get(targetDeployName)
+func (x *xdsService) controlPlaneExists(key string) bool {
+	_, err := x.StoreClient.Get(key)
 	return err != nil
 }

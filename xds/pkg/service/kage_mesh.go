@@ -13,6 +13,7 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/util"
+	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -39,7 +40,7 @@ type kageMeshService struct {
 }
 
 func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
-	kageMeshName := util.GenKageMeshName(spec.TargetDeploy.Name)
+	kageMeshName := util.GenKageMeshName(spec.Canary.TargetDeploy.Name)
 
 	kageMeshDep, err := k.KubeClient.GetDeploy(kageMeshName, spec.Opt)
 	if err != nil {
@@ -49,14 +50,20 @@ func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
 	k.Map.Cancel(kubeutil.ObjectKey(kageMeshDep))
 
 	if err := k.KubeClient.DeleteDeploy(kageMeshName, spec.Opt); err != nil {
-		fmt.Println("failed to delete kage mesh deploy", kageMeshName, "in", spec.Opt.Namespace)
+		log.WithError(err).
+			WithField("namespace", spec.Opt.Namespace).
+			WithField("name", kageMeshName).
+			Error("Failed to delete kage mesh deploy")
 	}
 
 	if err := k.KubeClient.DeleteConfigMap(kageMeshName, spec.Opt); err != nil {
-		fmt.Println("failed to delete kage mesh configmap", kageMeshName, "in", spec.Opt.Namespace)
+		log.WithError(err).
+			WithField("namespace", spec.Opt.Namespace).
+			WithField("name", kageMeshName).
+			Error("Failed to delete kage mesh configmap")
 	}
 
-	if err := k.XdsService.StopControlPlane(spec.TargetDeploy); err != nil {
+	if err := k.XdsService.StopControlPlane(spec.Canary); err != nil {
 		return err
 	}
 
@@ -66,7 +73,7 @@ func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
 func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, error) {
 	opt := spec.Opt
 
-	kageMeshName := util.GenKageMeshName(spec.Canary.TargetDeploy.Name)
+	kageMeshName := util.GenKageMeshName(spec.Canary.Name)
 	baselineConfigMap := k.KageMeshFactory.BaselineConfigMap(kageMeshName, []byte(consts.BaselineConfig))
 	if _, err := k.KubeClient.UpsertConfigMap(baselineConfigMap, opt); err != nil {
 		return nil, err

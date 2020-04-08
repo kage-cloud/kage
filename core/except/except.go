@@ -15,6 +15,7 @@ const (
 	ErrUnsupported   ErrorReason = "Unsupported"
 	ErrAlreadyExists ErrorReason = "AlreadyExists"
 	ErrTimeout       ErrorReason = "Timeout"
+	ErrInvalid       ErrorReason = "Invalid"
 )
 
 type kageError struct {
@@ -44,7 +45,7 @@ func ToHttpStatus(err error) int {
 		switch Reason(err) {
 		case ErrNotFound:
 			return http.StatusNotFound
-		case ErrAlreadyExists, ErrUnsupported, ErrConflict:
+		case ErrAlreadyExists, ErrUnsupported, ErrConflict, ErrInvalid:
 			return http.StatusBadRequest
 		case ErrTimeout:
 			return http.StatusRequestTimeout

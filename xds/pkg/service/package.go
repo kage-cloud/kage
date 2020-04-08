@@ -75,7 +75,7 @@ func (p *Package) Bindings() []axon.Binding {
 		axon.Bind(KageServiceKey).To().StructPtr(new(kageService)),
 		axon.Bind(CanaryServiceKey).To().StructPtr(new(canaryService)),
 		axon.Bind(EnvoyStateServiceKey).To().StructPtr(new(envoyStateService)),
-		axon.Bind(XdsEventHandlerServiceKey).To().StructPtr(new(xdsEventHandler)),
+		axon.Bind(XdsEventHandlerKey).To().StructPtr(new(xdsEventHandler)),
 		axon.Bind(XdsServiceKey).To().StructPtr(new(xdsService)),
 		axon.Bind(WatchServiceKey).To().StructPtr(new(watchService)),
 		axon.Bind(CanaryControllerServiceKey).To().StructPtr(new(canaryControllerService)),

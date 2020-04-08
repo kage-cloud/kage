@@ -9,8 +9,8 @@ type KageSpec struct {
 }
 
 type DeleteKageSpec struct {
-	Opt              kconfig.Opt
-	TargetDeployName string
+	Opt        kconfig.Opt
+	CanaryName string
 }
 
 type Kage struct {

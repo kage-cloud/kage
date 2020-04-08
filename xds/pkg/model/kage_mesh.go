@@ -13,8 +13,8 @@ type KageMesh struct {
 }
 
 type DeleteKageMeshSpec struct {
-	TargetDeploy *appsv1.Deployment
-	Opt          kconfig.Opt
+	Canary *Canary
+	Opt    kconfig.Opt
 }
 
 type KageMeshSpec struct {
