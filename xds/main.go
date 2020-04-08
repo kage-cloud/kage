@@ -1,7 +1,10 @@
 package main
 
-import log "github.com/sirupsen/logrus"
+import (
+	"github.com/kage-cloud/kage/xds/pkg"
+	log "github.com/sirupsen/logrus"
+)
 
 func main() {
-	log.Fatal(InjectorFactory().GetStructPtr(AppKey).(App).Start())
+	log.Fatal(pkg.InjectorFactory().GetStructPtr(pkg.AppKey).(pkg.App).Start())
 }
