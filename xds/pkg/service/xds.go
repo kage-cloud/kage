@@ -3,12 +3,10 @@ package service
 import (
 	"context"
 	"github.com/kage-cloud/kage/core/except"
-	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/xds"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
-	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	log "github.com/sirupsen/logrus"
 )
@@ -16,8 +14,8 @@ import (
 const XdsServiceKey = "XdsService"
 
 type XdsService interface {
-	StartControlPlane(ctx context.Context, canary *model.Canary) error
-	StopControlPlane(canary *model.Canary) error
+	StartControlPlane(ctx context.Context, spec *xds.ControlPlaneSpec) error
+	StopControlPlane(nodeId string) error
 	SetRoutingWeight(routingSpec *xds.RoutingSpec) error
 }
 
@@ -28,65 +26,53 @@ type xdsService struct {
 	StoreClient     snap.StoreClient     `inject:"StoreClient"`
 }
 
-func (x *xdsService) StopControlPlane(canary *model.Canary) error {
-	if err := x.StoreClient.Delete(kubeutil.ObjectKey(canary.TargetDeploy)); err != nil {
-		return err
-	}
-
-	if err := x.StoreClient.Delete(kubeutil.ObjectKey(canary.CanaryDeploy)); err != nil {
+func (x *xdsService) StopControlPlane(nodeId string) error {
+	if err := x.StoreClient.Delete(nodeId); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (x *xdsService) SetRoutingWeight(routingSpec *xds.RoutingSpec) error {
-	serviceName := snaputil.GenTargetClusterName(routingSpec.TargetName)
-	routes := x.RouteFactory.FromPercentage(routingSpec.CanaryName, serviceName, routingSpec.CanaryRoutingWeight, routingSpec.TotalRoutingWeight-routingSpec.CanaryRoutingWeight)
+func (x *xdsService) SetRoutingWeight(meshConfig *model.MeshConfig) error {
+	routes := x.RouteFactory.FromPercentage(meshConfig)
 
 	state := &store.EnvoyState{
-		NodeId: routingSpec.CanaryName,
+		NodeId: meshConfig.NodeId,
 		Routes: routes,
 	}
 
 	return x.StoreClient.Set(state)
 }
 
-func (x *xdsService) StartControlPlane(ctx context.Context, canary *model.Canary) error {
-	if x.controlPlaneExists(kubeutil.ObjectKey(canary.CanaryDeploy)) {
-		return except.NewError("a canary called %s already exists", except.ErrAlreadyExists, canary.Name)
+func (x *xdsService) StartControlPlane(ctx context.Context, spec *xds.ControlPlaneSpec) error {
+	if x.controlPlaneExists(spec.MeshConfig.NodeId) {
+		return except.NewError("The control plane for canary %s already exists", except.ErrAlreadyExists, spec.CanaryDeploy.Name)
 	}
 
-	if x.controlPlaneExists(kubeutil.ObjectKey(canary.TargetDeploy)) {
-		log.WithField("name", canary.TargetDeploy.Name).WithField("namespace", canary.TargetDeploy.Namespace).Debug("Already managed by control plane.")
-	} else {
-		targetHandler := x.XdsEventHandler.DeployPodsEventHandler(canary.TargetDeploy)
-		if err := x.WatchService.DeploymentPods(ctx, canary.TargetDeploy, 1, targetHandler); err != nil {
-			return err
-		}
-	}
-	canaryHandler := x.XdsEventHandler.DeployPodsEventHandler(canary.CanaryDeploy)
+	eventHandler := x.XdsEventHandler.DeployPodsEventHandler(spec.MeshConfig.NodeId)
 
-	routingSpec := &xds.RoutingSpec{
-		CanaryName:          canary.Name,
-		TargetName:          canary.TargetDeploy.Name,
-		CanaryRoutingWeight: canary.CanaryRoutingWeight,
-		TotalRoutingWeight:  canary.TotalRoutingWeight,
-	}
-	if err := x.SetRoutingWeight(routingSpec); err != nil {
+	if err := x.SetRoutingWeight(&spec.MeshConfig); err != nil {
 		return err
 	}
 
-	if err := x.WatchService.DeploymentPods(ctx, canary.CanaryDeploy, 1, canaryHandler); err != nil {
+	if err := x.WatchService.DeploymentPods(ctx, spec.TargetDeploy, 1, eventHandler); err != nil {
 		return err
 	}
 
-	log.WithField("name", canary.CanaryDeploy.Name).WithField("namespace", canary.CanaryDeploy.Name).Debug("Added canary to control plane.")
+	if err := x.WatchService.DeploymentPods(ctx, spec.CanaryDeploy, 1, eventHandler); err != nil {
+		return err
+	}
+
+	log.WithField("name", spec.CanaryDeploy.Name).
+		WithField("namespace", spec.CanaryDeploy.Namespace).
+		WithField("node_id", spec.MeshConfig.NodeId).
+		Debug("Added canary to control plane.")
 
 	return nil
 }
 
-func (x *xdsService) controlPlaneExists(key string) bool {
-	_, err := x.StoreClient.Get(key)
+func (x *xdsService) controlPlaneExists(nodeId string) bool {
+	_, err := x.StoreClient.Get(nodeId)
 	return err != nil
 }

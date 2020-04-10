@@ -16,11 +16,21 @@ const (
 	ErrAlreadyExists ErrorReason = "AlreadyExists"
 	ErrTimeout       ErrorReason = "Timeout"
 	ErrInvalid       ErrorReason = "Invalid"
+	ErrBatch         ErrorReason = "Batch"
 )
 
+type ReasonedError interface {
+	error
+	Reason() ErrorReason
+}
+
 type kageError struct {
-	Reason  ErrorReason
-	Message string
+	ErrorReason ErrorReason
+	Message     string
+}
+
+func (s *kageError) Reason() ErrorReason {
+	return s.ErrorReason
 }
 
 func (s *kageError) Error() string {
@@ -29,8 +39,8 @@ func (s *kageError) Error() string {
 
 func Reason(err error) ErrorReason {
 	if err != nil {
-		if v, ok := err.(*kageError); ok {
-			return v.Reason
+		if v, ok := err.(ReasonedError); ok {
+			return v.Reason()
 		}
 	}
 	return ErrInternalError
@@ -57,7 +67,7 @@ func ToHttpStatus(err error) int {
 
 func NewError(msg string, reason ErrorReason, args ...interface{}) error {
 	return &kageError{
-		Reason:  reason,
-		Message: fmt.Sprintf(msg, args...),
+		ErrorReason: reason,
+		Message:     fmt.Sprintf(msg, args...),
 	}
 }

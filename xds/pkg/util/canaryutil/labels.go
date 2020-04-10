@@ -40,7 +40,7 @@ func GenKageMeshLabels(targetDeployName, canaryDeployName string) map[string]str
 	return m
 }
 
-func GenKageMeshAnnotations(kageMeshMeta *model.KageMeshAnnotation) map[string]string {
+func GenKageMeshAnnotations(kageMeshMeta *model.MeshConfigAnnotation) map[string]string {
 	b, _ := json.Marshal(kageMeshMeta)
 
 	m := map[string]string{

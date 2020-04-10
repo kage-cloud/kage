@@ -10,7 +10,7 @@ import (
 const RouteFactoryKey = "RouteFactory"
 
 type RouteFactory interface {
-	FromPercentage(canaryName, serviceName string, canaryPercentage, servicePercentage uint32) []route.Route
+	FromPercentage(meshConfig *model.MeshConfig) []route.Route
 }
 
 func NewRouteFactory() RouteFactory {
@@ -20,10 +20,10 @@ func NewRouteFactory() RouteFactory {
 type routeFactory struct {
 }
 
-func (r *routeFactory) FromPercentage(canaryName, serviceName string, canaryPercentage, servicePercentage uint32) []route.Route {
+func (r *routeFactory) FromPercentage(meshConfig *model.MeshConfig) []route.Route {
 	return []route.Route{
 		{
-			Name: serviceName,
+			Name: meshConfig.Target.Name,
 			Match: &route.RouteMatch{
 				PathSpecifier: &route.RouteMatch_SafeRegex{
 					SafeRegex: &matcher.RegexMatcher{
@@ -40,15 +40,15 @@ func (r *routeFactory) FromPercentage(canaryName, serviceName string, canaryPerc
 						WeightedClusters: &route.WeightedCluster{
 							Clusters: []*route.WeightedCluster_ClusterWeight{
 								{
-									Name:   serviceName,
-									Weight: &wrappers.UInt32Value{Value: servicePercentage},
+									Name:   meshConfig.Target.Name,
+									Weight: &wrappers.UInt32Value{Value: meshConfig.Target.RoutingWeight},
 								},
 								{
-									Name:   canaryName,
-									Weight: &wrappers.UInt32Value{Value: canaryPercentage},
+									Name:   meshConfig.Canary.Name,
+									Weight: &wrappers.UInt32Value{Value: meshConfig.Canary.RoutingWeight},
 								},
 							},
-							TotalWeight: &wrappers.UInt32Value{Value: model.TotalRoutingWeight},
+							TotalWeight: &wrappers.UInt32Value{Value: meshConfig.TotalRoutingWeight},
 						},
 					},
 				},

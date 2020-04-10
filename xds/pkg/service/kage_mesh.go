@@ -2,17 +2,19 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"github.com/eddieowens/axon"
+	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/core/synchelpers"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
+	"github.com/kage-cloud/kage/xds/pkg/model/consts"
+	"github.com/kage-cloud/kage/xds/pkg/model/xds"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/util"
 	log "github.com/sirupsen/logrus"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -41,28 +43,19 @@ type kageMeshService struct {
 }
 
 func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
-	canaryDep, err := k.KubeClient.GetDeploy(spec.CanaryDeployName, spec.Opt)
+	kageMeshDeploy, err := k.fetchDeployFromCanary(spec.CanaryDeployName, spec.Opt)
 	if err != nil {
 		return err
 	}
 
-	k.Map.Cancel(kubeutil.ObjectKey(kageMeshDep))
-
-	if err := k.KubeClient.DeleteDeploy(kageMeshName, spec.Opt); err != nil {
-		log.WithError(err).
-			WithField("namespace", spec.Opt.Namespace).
-			WithField("name", kageMeshName).
-			Error("Failed to delete kage mesh deploy")
+	meshConfig, err := k.MeshConfigService.Get(kageMeshDeploy)
+	if err != nil {
+		return err
 	}
 
-	if err := k.KubeClient.DeleteConfigMap(kageMeshName, spec.Opt); err != nil {
-		log.WithError(err).
-			WithField("namespace", spec.Opt.Namespace).
-			WithField("name", kageMeshName).
-			Error("Failed to delete kage mesh configmap")
-	}
+	k.Map.Cancel(meshConfig.NodeId)
 
-	if err := k.XdsService.StopControlPlane(spec.Canary); err != nil {
+	if err := k.XdsService.StopControlPlane(meshConfig.NodeId); err != nil {
 		return err
 	}
 
@@ -74,13 +67,12 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 	kageMeshName := util.GenKageMeshName(spec.Canary.Name)
 
 	meshConfigSpec := &model.MeshConfigSpec{
-		Name:             kageMeshName,
 		CanaryDeployName: spec.Canary.CanaryDeploy.Name,
 		TargetDeployName: spec.Canary.TargetDeploy.Name,
 		Opt:              opt,
 	}
 
-	meshConfig, err := k.MeshConfigService.CreateBaseline(meshConfigSpec)
+	meshConfig, err := k.MeshConfigService.Create(meshConfigSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -92,14 +84,13 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		}
 	}
 
-	kageMeshDeploy := k.KageMeshFactory.Deploy(kageMeshName, meshConfig, containerPorts)
+	kageMeshDeploy := k.KageMeshFactory.Deploy(kageMeshName, spec.Canary.CanaryDeploy.Name, spec.Canary.TargetDeploy.Name, meshConfig, containerPorts)
 
 	labels.Merge(kageMeshDeploy.Labels, spec.Canary.TargetDeploy.Labels)
 	labels.Merge(kageMeshDeploy.Spec.Template.Labels, spec.Canary.TargetDeploy.Spec.Template.Labels)
 
-	objKey := kubeutil.ObjectKey(kageMeshDeploy)
 	ctx, cancel := context.WithCancel(context.Background())
-	k.Map.Add(objKey, cancel)
+	k.Map.Add(meshConfig.NodeId, cancel)
 
 	// Possibly kill the canary if the target deployment is deleted?
 	wi := k.KubeClient.InformDeploy(func(object metav1.Object) bool {
@@ -117,15 +108,22 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 				}
 
 			case <-ctx.Done():
-				if ctx.Err() != nil {
-					fmt.Println("stopping kage mesh", kageMeshName, ":", ctx.Err().Error())
-				}
+				log.WithField("node_id", meshConfig.NodeId).
+					WithField("target_deploy", meshConfigSpec.TargetDeployName).
+					WithField("namespace", opt.Namespace).
+					WithError(ctx.Err()).
+					Debug("Stopping kage mesh")
 				return
 			}
 		}
 	}()
 
-	if err := k.XdsService.StartControlPlane(ctx, spec.Canary); err != nil {
+	cpSpec := &xds.ControlPlaneSpec{
+		TargetDeploy: spec.Canary.TargetDeploy,
+		CanaryDeploy: spec.Canary.CanaryDeploy,
+		MeshConfig:   *meshConfig,
+	}
+	if err := k.XdsService.StartControlPlane(ctx, cpSpec); err != nil {
 		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
 		return nil, err
 	}
@@ -156,39 +154,50 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 	}, nil
 }
 
-func (k *kageMeshService) Fetch(canaryName string, opt kconfig.Opt) (*model.KageMesh, error) {
-	dep, err := k.KubeClient.GetDeploy(canaryName, opt)
+func (k *kageMeshService) Fetch(canaryDeployName string, opt kconfig.Opt) (*model.KageMesh, error) {
+	kageMeshDeploy, err := k.fetchDeployFromCanary(canaryDeployName, opt)
 	if err != nil {
 		return nil, err
 	}
 
-	state, err := k.StoreClient.Get(canaryName)
+	meshConfig, err := k.MeshConfigService.Get(kageMeshDeploy)
 	if err != nil {
 		return nil, err
 	}
 
-	weight, err := k.EnvoyStateService.FetchCanaryRouteWeight(state)
+	cm, err := k.KubeClient.Api().CoreV1().ConfigMaps(opt.Namespace).Get(kageMeshDeploy.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 
 	return &model.KageMesh{
-		Name:   dep.Name,
-		Deploy: dep,
-		MeshConfig: model.MeshConfig{
-			NodeId: "",
-			Canary: model.MeshDeployCluster{
-				ClusterName:       "",
-				DeployName:        "",
-				TrafficPercentage: weight,
-			},
-			Target: model.MeshDeployCluster{
-				ClusterName:       "",
-				DeployName:        "",
-				TrafficPercentage: model.TotalRoutingWeight - weight,
-			},
-		},
+		Name:       kageMeshDeploy.Name,
+		MeshConfig: *meshConfig,
+		ConfigMap:  cm,
+		Deploy:     kageMeshDeploy,
 	}, nil
+}
+
+func (k *kageMeshService) fetchDeployFromCanary(canaryDeployName string, opt kconfig.Opt) (*appsv1.Deployment, error) {
+	selector := labels.SelectorFromSet(map[string]string{
+		consts.LabelKeyCanary:   canaryDeployName,
+		consts.LabelKeyResource: consts.LabelValueResourceKageMesh,
+	})
+
+	lo := metav1.ListOptions{
+		LabelSelector: selector.String(),
+	}
+
+	kageMeshDeployLists, err := k.KubeClient.Api().AppsV1().Deployments(opt.Namespace).List(lo)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(kageMeshDeployLists.Items) <= 0 {
+		return nil, except.NewError("Canary %s has no mesh.", except.ErrNotFound, canaryDeployName)
+	}
+
+	return &kageMeshDeployLists.Items[0], nil
 }
 
 func kageMeshFactory(_ axon.Injector, _ axon.Args) axon.Instance {

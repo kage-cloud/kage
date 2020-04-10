@@ -13,22 +13,22 @@ import (
 const KageMeshFactoryKey = "KageMeshFactory"
 
 type KageMeshFactory interface {
-	Deploy(name string, meshConfig *model.MeshConfig, ports []corev1.ContainerPort) *appsv1.Deployment
-	BaselineConfigMap(name string, meshConfig *model.MeshConfig, content []byte) *corev1.ConfigMap
+	Deploy(name, canaryDeployName, targetDeployName string, meshConfig *model.MeshConfig, ports []corev1.ContainerPort) *appsv1.Deployment
+	BaselineConfigMap(name, canaryDeployName, targetDeployName string, meshConfig *model.MeshConfig, content []byte) *corev1.ConfigMap
 }
 
 type kageMeshFactory struct {
 }
 
-func (k *kageMeshFactory) BaselineConfigMap(name string, meshConfig *model.MeshConfig, content []byte) *corev1.ConfigMap {
+func (k *kageMeshFactory) BaselineConfigMap(name, canaryDeployName, targetDeployName string, meshConfig *model.MeshConfig, content []byte) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
-			Labels: canaryutil.GenKageMeshLabels(meshConfig.Target.DeployName, meshConfig.Canary.DeployName),
-			Annotations: canaryutil.GenKageMeshAnnotations(&model.KageMeshAnnotation{
+			Labels: canaryutil.GenKageMeshLabels(targetDeployName, canaryDeployName),
+			Annotations: canaryutil.GenKageMeshAnnotations(&model.MeshConfigAnnotation{
 				NodeId:            meshConfig.NodeId,
-				CanaryClusterName: meshConfig.Canary.ClusterName,
-				TargetClusterName: meshConfig.Target.ClusterName,
+				CanaryClusterName: meshConfig.Canary.Name,
+				TargetClusterName: meshConfig.Target.Name,
 			}),
 		},
 		BinaryData: map[string][]byte{
@@ -37,16 +37,16 @@ func (k *kageMeshFactory) BaselineConfigMap(name string, meshConfig *model.MeshC
 	}
 }
 
-func (k *kageMeshFactory) Deploy(name string, meshConfig *model.MeshConfig, ports []corev1.ContainerPort) *appsv1.Deployment {
+func (k *kageMeshFactory) Deploy(name, canaryDeployName, targetDeployName string, meshConfig *model.MeshConfig, ports []corev1.ContainerPort) *appsv1.Deployment {
 	labels := canaryutil.GenKageMeshLabels(meshConfig.Target.DeployName, meshConfig.Canary.DeployName)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
 			Labels: labels,
-			Annotations: canaryutil.GenKageMeshAnnotations(&model.KageMeshAnnotation{
+			Annotations: canaryutil.GenKageMeshAnnotations(&model.MeshConfigAnnotation{
 				NodeId:            meshConfig.NodeId,
-				CanaryClusterName: meshConfig.Canary.ClusterName,
-				TargetClusterName: meshConfig.Target.ClusterName,
+				CanaryClusterName: meshConfig.Canary.Name,
+				TargetClusterName: meshConfig.Target.Name,
 			}),
 		},
 		Spec: appsv1.DeploymentSpec{

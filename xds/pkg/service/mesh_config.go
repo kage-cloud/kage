@@ -3,63 +3,31 @@ package service
 import (
 	"bytes"
 	"github.com/google/uuid"
-	"github.com/kage-cloud/kage/core/except"
-	"github.com/kage-cloud/kage/core/kube"
-	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/xds/pkg/config"
-	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/util"
-	"github.com/kage-cloud/kage/xds/pkg/util/canaryutil"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
+	appsv1 "k8s.io/api/apps/v1"
 	"text/template"
 )
 
 const MeshConfigServiceKey = "MeshConfigService"
 
 type MeshConfigService interface {
-	CreateBaseline(spec *model.MeshConfigSpec) (*model.MeshConfig, error)
-	FetchFromCanaryDeployName(name string, opt kconfig.Opt) (*model.MeshConfig, error)
+	Create(spec *model.MeshConfigSpec) (*model.MeshConfig, error)
+	Get(kageMeshDeploy *appsv1.Deployment) (*model.MeshConfig, error)
 }
 
 type meshConfigService struct {
-	KageMeshFactory   factory.KageMeshFactory `inject:"KageMeshFactory"`
-	KubeClient        kube.Client             `inject:"KubeClient"`
-	Config            *config.Config          `inject:"Config"`
-	StoreClient       snap.StoreClient        `inject:"StoreClient"`
-	EnvoyStateService EnvoyStateService       `inject:"EnvoyStateService"`
+	Config            *config.Config    `inject:"Config"`
+	StoreClient       snap.StoreClient  `inject:"StoreClient"`
+	EnvoyStateService EnvoyStateService `inject:"EnvoyStateService"`
 }
 
-func (m *meshConfigService) FetchFromCanaryDeployName(name string, opt kconfig.Opt) (*model.MeshConfig, error) {
-	selector := labels.SelectorFromSet(map[string]string{
-		consts.LabelKeyCanary:   name,
-		consts.LabelKeyResource: consts.LabelValueResourceKageMesh,
-	})
-
-	lo := metav1.ListOptions{
-		LabelSelector: selector.String(),
-	}
-
-	kageMeshDeployLists, err := m.KubeClient.Api().AppsV1().Deployments(opt.Namespace).List(lo)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(kageMeshDeployLists.Items) <= 0 {
-		return nil, except.NewError("Canary %s has no mesh.", except.ErrNotFound, name)
-	}
-
-	kageMeshDeploy := kageMeshDeployLists.Items[0]
+func (m *meshConfigService) Get(kageMeshDeploy *appsv1.Deployment) (*model.MeshConfig, error) {
 	kageMeshMeta, err := util.MeshConfigAnnotation(kageMeshDeploy.Annotations)
-	if err != nil {
-		return nil, err
-	}
-
-	targetName, err := canaryutil.TargetNameFromLabels(kageMeshDeploy.Labels)
 	if err != nil {
 		return nil, err
 	}
@@ -73,22 +41,21 @@ func (m *meshConfigService) FetchFromCanaryDeployName(name string, opt kconfig.O
 
 	meshConfig := &model.MeshConfig{
 		NodeId: kageMeshMeta.NodeId,
-		Canary: model.MeshDeployCluster{
-			ClusterName:       kageMeshMeta.CanaryClusterName,
-			DeployName:        name,
-			TrafficPercentage: weight,
+		Canary: model.MeshCluster{
+			Name:          kageMeshMeta.CanaryClusterName,
+			RoutingWeight: weight,
 		},
-		Target: model.MeshDeployCluster{
-			ClusterName:       kageMeshMeta.TargetClusterName,
-			DeployName:        targetName,
-			TrafficPercentage: model.TotalRoutingWeight - weight,
+		Target: model.MeshCluster{
+			Name:          kageMeshMeta.TargetClusterName,
+			RoutingWeight: model.TotalRoutingWeight - weight,
 		},
+		TotalRoutingWeight: model.TotalRoutingWeight,
 	}
 
 	return meshConfig, nil
 }
 
-func (m *meshConfigService) CreateBaseline(spec *model.MeshConfigSpec) (*model.MeshConfig, error) {
+func (m *meshConfigService) Create(spec *model.MeshConfigSpec) (*model.MeshConfig, error) {
 	tmpl := template.New("")
 	t, err := tmpl.Parse(consts.BaselineConfig)
 	if err != nil {
@@ -121,19 +88,14 @@ func (m *meshConfigService) CreateBaseline(spec *model.MeshConfigSpec) (*model.M
 
 	meshConfig := &model.MeshConfig{
 		NodeId: baseline.NodeId,
-		Canary: model.MeshDeployCluster{
-			ClusterName: canaryName,
-			DeployName:  spec.CanaryDeployName,
+		Canary: model.MeshCluster{
+			Name: canaryName,
 		},
-		Target: model.MeshDeployCluster{
-			ClusterName: serviceName,
-			DeployName:  spec.TargetDeployName,
+		Target: model.MeshCluster{
+			Name:          serviceName,
+			RoutingWeight: model.TotalRoutingWeight,
 		},
-	}
-
-	baselineConfigMap := m.KageMeshFactory.BaselineConfigMap(spec.Name, meshConfig, buf.Bytes())
-	if _, err := m.KubeClient.UpsertConfigMap(baselineConfigMap, spec.Opt); err != nil {
-		return nil, err
+		TotalRoutingWeight: model.TotalRoutingWeight,
 	}
 
 	return meshConfig, nil

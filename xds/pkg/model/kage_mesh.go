@@ -3,9 +3,10 @@ package model
 import (
 	"github.com/kage-cloud/kage/core/kube/kconfig"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
-type KageMeshAnnotation struct {
+type MeshConfigAnnotation struct {
 	NodeId            string
 	CanaryClusterName string
 	TargetClusterName string
@@ -13,26 +14,25 @@ type KageMeshAnnotation struct {
 
 type KageMesh struct {
 	Name       string
-	Deploy     *appsv1.Deployment
 	MeshConfig MeshConfig
+	ConfigMap  *corev1.ConfigMap
+	Deploy     *appsv1.Deployment
 }
 
 type MeshConfig struct {
-	NodeId string
-	Canary MeshDeployCluster
-	Target MeshDeployCluster
+	NodeId             string
+	Canary             MeshCluster
+	Target             MeshCluster
+	TotalRoutingWeight uint32
 }
 
 // Binds together the Envoy cluster and the Kubernetes deployment.
-type MeshDeployCluster struct {
-	ClusterName       string
-	DeployName        string
-	TrafficPercentage uint32
+type MeshCluster struct {
+	Name          string
+	RoutingWeight uint32
 }
 
 type MeshConfigSpec struct {
-	// The name for the config
-	Name             string
 	CanaryDeployName string
 	TargetDeployName string
 	Opt              kconfig.Opt

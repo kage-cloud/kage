@@ -20,8 +20,8 @@ func AppendKageLabels(labels map[string]string) {
 	labels[consts.LabelKeyDomain] = consts.Domain
 }
 
-func MeshConfigAnnotation(annotations map[string]string) (*model.KageMeshAnnotation, error) {
-	anno := new(model.KageMeshAnnotation)
+func MeshConfigAnnotation(annotations map[string]string) (*model.MeshConfigAnnotation, error) {
+	anno := new(model.MeshConfigAnnotation)
 
 	if v, ok := annotations[consts.AnnotationKageMesh]; ok {
 		if err := json.Unmarshal([]byte(v), anno); err != nil {

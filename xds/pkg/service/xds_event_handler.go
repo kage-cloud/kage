@@ -1,17 +1,14 @@
 package service
 
 import (
-	"fmt"
 	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	endpointv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
-	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/util"
 	"github.com/kage-cloud/kage/xds/pkg/util/envoyutil"
 	log "github.com/sirupsen/logrus"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -20,7 +17,7 @@ import (
 const XdsEventHandlerKey = "XdsEventHandler"
 
 type XdsEventHandler interface {
-	DeployPodsEventHandler(deploy ...*appsv1.Deployment) model.InformEventHandler
+	DeployPodsEventHandler(nodeId string) model.InformEventHandler
 }
 
 type xdsEventHandler struct {
@@ -29,21 +26,19 @@ type xdsEventHandler struct {
 	StoreClient     snap.StoreClient        `inject:"StoreClient"`
 }
 
-func (x *xdsEventHandler) DeployPodsEventHandler(deploy ...*appsv1.Deployment) model.InformEventHandler {
+func (x *xdsEventHandler) DeployPodsEventHandler(nodeId string) model.InformEventHandler {
 	return &model.InformEventHandlerFuncs{
-		OnWatch: x.onWatch(deploy...),
-		OnList:  x.onList(deploy...),
+		OnWatch: x.onWatch(nodeId),
+		OnList:  x.onList(nodeId),
 	}
 }
 
-func (x *xdsEventHandler) onList(deploy ...*appsv1.Deployment) model.OnListEventFunc {
+func (x *xdsEventHandler) onList(nodeId string) model.OnListEventFunc {
 	return func(obj runtime.Object) error {
 		if v, ok := obj.(*corev1.PodList); ok {
-			for _, d := range deploy {
-				for _, p := range v.Items {
-					if err := x.storePod(kubeutil.ObjectKey(d), &p); err != nil {
-						return err
-					}
+			for _, p := range v.Items {
+				if err := x.storePod(nodeId, &p); err != nil {
+					return err
 				}
 			}
 		}
@@ -51,28 +46,26 @@ func (x *xdsEventHandler) onList(deploy ...*appsv1.Deployment) model.OnListEvent
 	}
 }
 
-func (x *xdsEventHandler) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEventFunc {
+func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
 	return func(event watch.Event) bool {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
 			switch event.Type {
 			case watch.Error, watch.Deleted:
-				for _, d := range deploy {
-					if err := x.removePod(kubeutil.ObjectKey(d), pod); err != nil {
-						log.WithField("name", pod.Name).
-							WithField("namespace", pod.Namespace).
-							WithError(err).
-							Error("Failed to remove pod from control plane.")
-					}
+				if err := x.removePod(nodeId, pod); err != nil {
+					log.WithField("name", pod.Name).
+						WithField("namespace", pod.Namespace).
+						WithField("node_id", nodeId).
+						WithError(err).
+						Error("Failed to remove pod from control plane.")
 				}
 				break
 			case watch.Modified, watch.Added:
-				for _, d := range deploy {
-					if err := x.storePod(kubeutil.ObjectKey(d), pod); err != nil {
-						log.WithField("name", pod.Name).
-							WithField("namespace", pod.Namespace).
-							WithError(err).
-							Error("Failed to add pod to control plane.")
-					}
+				if err := x.storePod(nodeId, pod); err != nil {
+					log.WithField("name", pod.Name).
+						WithField("namespace", pod.Namespace).
+						WithField("node_id", nodeId).
+						WithError(err).
+						Error("Failed to add pod to control plane.")
 				}
 			}
 		}
@@ -80,8 +73,8 @@ func (x *xdsEventHandler) onWatch(deploy ...*appsv1.Deployment) model.OnWatchEve
 	}
 }
 
-func (x *xdsEventHandler) removePod(key string, pod *corev1.Pod) error {
-	state, err := x.StoreClient.Get(key)
+func (x *xdsEventHandler) removePod(nodeId string, pod *corev1.Pod) error {
+	state, err := x.StoreClient.Get(nodeId)
 	if err != nil {
 		return err
 	}
@@ -116,8 +109,8 @@ func (x *xdsEventHandler) removePod(key string, pod *corev1.Pod) error {
 	return nil
 }
 
-func (x *xdsEventHandler) storePod(key string, pod *corev1.Pod) error {
-	state, err := x.StoreClient.Get(key)
+func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
+	state, err := x.StoreClient.Get(nodeId)
 	if err != nil {
 		return err
 	}
@@ -133,11 +126,15 @@ func (x *xdsEventHandler) storePod(key string, pod *corev1.Pod) error {
 		for _, cp := range c.Ports {
 			proto, err := util.KubeProtocolToSocketAddressProtocol(cp.Protocol)
 			if err != nil {
-				fmt.Println("Skipping container", c.Name, "for pod", pod.Name, "in namespace", pod.Namespace, "as its protocol is not supported")
+				log.WithField("container", c.Name).
+					WithField("pod", pod.Name).
+					WithField("namespace", pod.Namespace).
+					WithField("protocol", cp.Protocol).
+					Debug("Protocol is not supported")
 				continue
 			}
 			if !envoyutil.ContainsListenerPort(uint32(cp.ContainerPort), state.Listeners) {
-				listener, err := x.ListenerFactory.Listener(key, uint32(cp.ContainerPort), proto)
+				listener, err := x.ListenerFactory.Listener(nodeId, uint32(cp.ContainerPort), proto)
 				if err != nil {
 					return err
 				}
