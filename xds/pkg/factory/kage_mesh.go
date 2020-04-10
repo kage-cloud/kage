@@ -1,7 +1,7 @@
 package factory
 
 import (
-	"fmt"
+	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/util/canaryutil"
 	appsv1 "k8s.io/api/apps/v1"
@@ -13,18 +13,23 @@ import (
 const KageMeshFactoryKey = "KageMeshFactory"
 
 type KageMeshFactory interface {
-	Deploy(name string, targetDeployName string, ports []corev1.ContainerPort, deployLabels, templateLabels map[string]string) *appsv1.Deployment
-	BaselineConfigMap(targetDeployName string, content []byte) *corev1.ConfigMap
+	Deploy(name string, meshConfig *model.MeshConfig, ports []corev1.ContainerPort) *appsv1.Deployment
+	BaselineConfigMap(name string, meshConfig *model.MeshConfig, content []byte) *corev1.ConfigMap
 }
 
 type kageMeshFactory struct {
 }
 
-func (k *kageMeshFactory) BaselineConfigMap(targetDeployName string, content []byte) *corev1.ConfigMap {
+func (k *kageMeshFactory) BaselineConfigMap(name string, meshConfig *model.MeshConfig, content []byte) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("%s-baseline-config", targetDeployName),
-			Labels: canaryutil.GenKageMeshLabels(targetDeployName),
+			Name:   name,
+			Labels: canaryutil.GenKageMeshLabels(meshConfig.Target.DeployName, meshConfig.Canary.DeployName),
+			Annotations: canaryutil.GenKageMeshAnnotations(&model.KageMeshAnnotation{
+				NodeId:            meshConfig.NodeId,
+				CanaryClusterName: meshConfig.Canary.ClusterName,
+				TargetClusterName: meshConfig.Target.ClusterName,
+			}),
 		},
 		BinaryData: map[string][]byte{
 			consts.BaselineConfigMapFieldName: content,
@@ -32,23 +37,23 @@ func (k *kageMeshFactory) BaselineConfigMap(targetDeployName string, content []b
 	}
 }
 
-func (k *kageMeshFactory) Deploy(name string, targetDeployName string, ports []corev1.ContainerPort, deployLabels, templateLabels map[string]string) *appsv1.Deployment {
+func (k *kageMeshFactory) Deploy(name string, meshConfig *model.MeshConfig, ports []corev1.ContainerPort) *appsv1.Deployment {
+	labels := canaryutil.GenKageMeshLabels(meshConfig.Target.DeployName, meshConfig.Canary.DeployName)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
-			Labels: canaryutil.GenKageMeshLabels(targetDeployName),
+			Labels: labels,
+			Annotations: canaryutil.GenKageMeshAnnotations(&model.KageMeshAnnotation{
+				NodeId:            meshConfig.NodeId,
+				CanaryClusterName: meshConfig.Canary.ClusterName,
+				TargetClusterName: meshConfig.Target.ClusterName,
+			}),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: pointer.Int32Ptr(3),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						consts.LabelKeyDomain:   consts.Domain,
-						consts.LabelKeyResource: consts.LabelValueResourceKageMesh,
-					},
-					Annotations: map[string]string{
-						consts.LabelKeyFor: targetDeployName,
-					},
+					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -83,13 +88,6 @@ func (k *kageMeshFactory) Deploy(name string, targetDeployName string, ports []c
 				},
 			},
 		},
-	}
-
-	for k, v := range deployLabels {
-		dep.Labels[k] = v
-	}
-	for k, v := range templateLabels {
-		dep.Spec.Template.Labels[k] = v
 	}
 	return dep
 }

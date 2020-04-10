@@ -41,7 +41,7 @@ func (x *xdsService) StopControlPlane(canary *model.Canary) error {
 }
 
 func (x *xdsService) SetRoutingWeight(routingSpec *xds.RoutingSpec) error {
-	serviceName := snaputil.GenServiceName(routingSpec.TargetName)
+	serviceName := snaputil.GenTargetClusterName(routingSpec.TargetName)
 	routes := x.RouteFactory.FromPercentage(routingSpec.CanaryName, serviceName, routingSpec.CanaryRoutingWeight, routingSpec.TotalRoutingWeight-routingSpec.CanaryRoutingWeight)
 
 	state := &store.EnvoyState{

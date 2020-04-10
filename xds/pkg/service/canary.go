@@ -51,8 +51,7 @@ func (c *canaryService) Get(name string, opt kconfig.Opt) (*model.Canary, error)
 }
 
 func (c *canaryService) Delete(spec *model.DeleteCanarySpec) error {
-	name := snaputil.GenCanaryName(spec.TargetDeploy.Name)
-	if err := c.KubeClient.DeleteDeploy(name, spec.Opt); err != nil {
+	if err := c.KubeClient.DeleteDeploy(spec.CanaryDeployName, spec.Opt); err != nil {
 		return err
 	}
 	return nil
@@ -66,7 +65,7 @@ func (c *canaryService) Create(spec *model.CreateCanarySpec) (*model.Canary, err
 
 	canaryReplicas := canaryutil.DeriveReplicaCountFromTraffic(replicas, spec.TrafficPercentage)
 
-	name := snaputil.GenCanaryName(spec.TargetDeploy.Name)
+	name := snaputil.GenCanaryClusterName(spec.TargetDeploy.Name)
 
 	canary := c.CanaryFactory.FromDeployment(name, spec.TargetDeploy, canaryReplicas)
 

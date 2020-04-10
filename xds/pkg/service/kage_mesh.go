@@ -10,12 +10,12 @@ import (
 	"github.com/kage-cloud/kage/core/synchelpers"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
-	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/util"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/watch"
 	"time"
 )
@@ -23,7 +23,7 @@ import (
 const KageMeshServiceKey = "KageMeshService"
 
 type KageMeshService interface {
-	Fetch(endpointsName string, opt kconfig.Opt) (*model.KageMesh, error)
+	Fetch(canaryName string, opt kconfig.Opt) (*model.KageMesh, error)
 	Create(spec *model.KageMeshSpec) (*model.KageMesh, error)
 	Delete(spec *model.DeleteKageMeshSpec) error
 }
@@ -36,13 +36,12 @@ type kageMeshService struct {
 	XdsService                 XdsService                 `inject:"XdsService"`
 	LockdownService            LockdownService            `inject:"LockdownService"`
 	EndpointsControllerService EndpointsControllerService `inject:"EndpointsControllerService"`
+	MeshConfigService          MeshConfigService          `inject:"MeshConfigService"`
 	Map                        synchelpers.CancelFuncMap
 }
 
 func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
-	kageMeshName := util.GenKageMeshName(spec.Canary.TargetDeploy.Name)
-
-	kageMeshDep, err := k.KubeClient.GetDeploy(kageMeshName, spec.Opt)
+	canaryDep, err := k.KubeClient.GetDeploy(spec.CanaryDeployName, spec.Opt)
 	if err != nil {
 		return err
 	}
@@ -72,10 +71,17 @@ func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
 
 func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, error) {
 	opt := spec.Opt
-
 	kageMeshName := util.GenKageMeshName(spec.Canary.Name)
-	baselineConfigMap := k.KageMeshFactory.BaselineConfigMap(kageMeshName, []byte(consts.BaselineConfig))
-	if _, err := k.KubeClient.UpsertConfigMap(baselineConfigMap, opt); err != nil {
+
+	meshConfigSpec := &model.MeshConfigSpec{
+		Name:             kageMeshName,
+		CanaryDeployName: spec.Canary.CanaryDeploy.Name,
+		TargetDeployName: spec.Canary.TargetDeploy.Name,
+		Opt:              opt,
+	}
+
+	meshConfig, err := k.MeshConfigService.CreateBaseline(meshConfigSpec)
+	if err != nil {
 		return nil, err
 	}
 
@@ -85,7 +91,11 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 			containerPorts = append(containerPorts, cp)
 		}
 	}
-	kageMeshDeploy := k.KageMeshFactory.Deploy(kageMeshName, spec.Canary.TargetDeploy.Name, containerPorts, spec.Canary.TargetDeploy.Labels, spec.Canary.TargetDeploy.Spec.Template.Labels)
+
+	kageMeshDeploy := k.KageMeshFactory.Deploy(kageMeshName, meshConfig, containerPorts)
+
+	labels.Merge(kageMeshDeploy.Labels, spec.Canary.TargetDeploy.Labels)
+	labels.Merge(kageMeshDeploy.Spec.Template.Labels, spec.Canary.TargetDeploy.Spec.Template.Labels)
 
 	objKey := kubeutil.ObjectKey(kageMeshDeploy)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -116,44 +126,43 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 	}()
 
 	if err := k.XdsService.StartControlPlane(ctx, spec.Canary); err != nil {
-		_ = k.KubeClient.DeleteConfigMap(baselineConfigMap.Name, opt)
+		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
 		return nil, err
 	}
 
-	kageMeshDeploy, err := k.KubeClient.UpsertDeploy(kageMeshDeploy, opt)
+	kageMeshDeploy, err = k.KubeClient.UpsertDeploy(kageMeshDeploy, opt)
 	if err != nil {
-		_ = k.KubeClient.DeleteConfigMap(baselineConfigMap.Name, opt)
+		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
 		return nil, err
 	}
 
 	if err := k.KubeClient.WaitTillDeployReady(kageMeshDeploy.Name, time.Minute*1, opt); err != nil {
-		_ = k.KubeClient.DeleteConfigMap(baselineConfigMap.Name, opt)
+		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
 		_ = k.KubeClient.DeleteDeploy(kageMeshDeploy.Name, opt)
 		return nil, err
 	}
 
 	blacklist, _ := metav1.LabelSelectorAsMap(spec.Canary.TargetDeploy.Spec.Selector)
 	if err := k.EndpointsControllerService.StartWithBlacklistedEndpoints(ctx, blacklist, opt); err != nil {
-		_ = k.KubeClient.DeleteConfigMap(baselineConfigMap.Name, opt)
+		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
 		_ = k.KubeClient.DeleteDeploy(kageMeshDeploy.Name, opt)
 		return nil, err
 	}
 
 	return &model.KageMesh{
-		Name:                     kageMeshName,
-		Deploy:                   kageMeshDeploy,
-		CanaryTrafficPercentage:  spec.Canary.CanaryRoutingWeight,
-		ServiceTrafficPercentage: model.TotalRoutingWeight,
+		Name:       kageMeshName,
+		Deploy:     kageMeshDeploy,
+		MeshConfig: *meshConfig,
 	}, nil
 }
 
-func (k *kageMeshService) Fetch(endpointsName string, opt kconfig.Opt) (*model.KageMesh, error) {
-	dep, err := k.KubeClient.GetDeploy(util.GenKageMeshName(endpointsName), opt)
+func (k *kageMeshService) Fetch(canaryName string, opt kconfig.Opt) (*model.KageMesh, error) {
+	dep, err := k.KubeClient.GetDeploy(canaryName, opt)
 	if err != nil {
 		return nil, err
 	}
 
-	state, err := k.StoreClient.Get(endpointsName)
+	state, err := k.StoreClient.Get(canaryName)
 	if err != nil {
 		return nil, err
 	}
@@ -164,10 +173,21 @@ func (k *kageMeshService) Fetch(endpointsName string, opt kconfig.Opt) (*model.K
 	}
 
 	return &model.KageMesh{
-		Name:                     dep.Name,
-		Deploy:                   dep,
-		CanaryTrafficPercentage:  weight,
-		ServiceTrafficPercentage: model.TotalRoutingWeight - weight,
+		Name:   dep.Name,
+		Deploy: dep,
+		MeshConfig: model.MeshConfig{
+			NodeId: "",
+			Canary: model.MeshDeployCluster{
+				ClusterName:       "",
+				DeployName:        "",
+				TrafficPercentage: weight,
+			},
+			Target: model.MeshDeployCluster{
+				ClusterName:       "",
+				DeployName:        "",
+				TrafficPercentage: model.TotalRoutingWeight - weight,
+			},
+		},
 	}, nil
 }
 

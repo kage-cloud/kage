@@ -35,14 +35,20 @@ type Kube struct {
 }
 
 type Xds struct {
-	Port    uint16 `mapstructure:"port"`
-	Address string `mapstructure:"address"`
+	Port      uint16 `mapstructure:"port"`
+	Address   string `mapstructure:"address"`
+	AdminPort uint16 `mapstructure:"adminport"`
 }
 
 func defaultConfig() *Config {
 	return &Config{
 		Server: Server{
 			Port: 8080,
+		},
+		Xds: Xds{
+			Port:      8081,
+			Address:   "0.0.0.0",
+			AdminPort: 8082,
 		},
 	}
 }

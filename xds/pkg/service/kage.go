@@ -20,29 +20,18 @@ type kageService struct {
 
 func (k *kageService) Delete(spec *model.DeleteKageSpec) error {
 	opt := spec.Opt
-	canaryDeploy, err := k.KubeClient.GetDeploy(spec.CanaryName, opt)
-	if err != nil {
-		return err
-	}
-
-
-	canaryDeploy, err := k.KubeClient.GetDeploy(spec.CanaryName, opt)
-	if err != nil {
-		return err
-	}
 
 	kageMeshSpec := &model.DeleteKageMeshSpec{
-		Canary: &spec.
-			Opt:          opt,
+		CanaryDeployName: spec.CanaryName,
+		Opt:              opt,
 	}
-
 	if err := k.KageMeshService.Delete(kageMeshSpec); err != nil {
 		return err
 	}
 
 	canarySpec := &model.DeleteCanarySpec{
-		TargetDeploy: canaryDeploy,
-		Opt:          opt,
+		CanaryDeployName: spec.CanaryName,
+		Opt:              opt,
 	}
 
 	if err := k.CanaryService.Delete(canarySpec); err != nil {

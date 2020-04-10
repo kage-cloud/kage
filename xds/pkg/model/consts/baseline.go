@@ -18,7 +18,7 @@ dynamic_resources:
       set_node_on_first_message_only: true
       grpc_services:
         - envoy_grpc:
-            cluster_name: {{- .XdsClusterName}}
+            cluster_name: xds
 static_resources:
   clusters:
     - connect_timeout: 1s
@@ -27,7 +27,7 @@ static_resources:
             address: {{- XdsAddress}}
             port_value: {{- XdsPort}}
       http2_protocol_options: {}
-      name: {{- .XdsClusterName}}
+      name: xds
       type: STATIC
     - name: {{- .CanaryClusterName}}
       connect_timeout: 1s
@@ -41,7 +41,7 @@ static_resources:
             set_node_on_first_message_only: true
             grpc_services:
               - envoy_grpc:
-                  cluster_name: {{- .XdsClusterName}}
+                  cluster_name: xds
     - name: {{- .ServiceClusterName}}
       connect_timeout: 1s
       type: EDS

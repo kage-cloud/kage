@@ -1,7 +1,10 @@
 package util
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/kage-cloud/kage/core/except"
+	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 )
 
@@ -15,4 +18,15 @@ func AppendKageLabels(labels map[string]string) {
 	}
 
 	labels[consts.LabelKeyDomain] = consts.Domain
+}
+
+func MeshConfigAnnotation(annotations map[string]string) (*model.KageMeshAnnotation, error) {
+	anno := new(model.KageMeshAnnotation)
+
+	if v, ok := annotations[consts.AnnotationKageMesh]; ok {
+		if err := json.Unmarshal([]byte(v), anno); err != nil {
+			return nil, err
+		}
+	}
+	return nil, except.NewError("Annotation %s could not be found", except.ErrNotFound, consts.AnnotationKageMesh)
 }

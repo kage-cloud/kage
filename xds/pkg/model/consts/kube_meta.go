@@ -11,9 +11,11 @@ const (
 	LabelKeyDomain     = "domain"
 	LabelKeyResource   = Domain + "/resource"
 	LabelKeyLockedDown = Domain + "/locked-down"
-	LabelKeyFor        = Domain + "/for"
+	LabelKeyTarget     = Domain + "/target"
+	LabelKeyCanary     = Domain + "/canary"
 )
 
 const (
 	AnnotationKeyLockdown = Domain + "/lockdown"
+	AnnotationKageMesh    = Domain + "/kage-mesh"
 )

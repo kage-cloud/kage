@@ -16,8 +16,8 @@ type CreateCanarySpec struct {
 }
 
 type DeleteCanarySpec struct {
-	TargetDeploy *appsv1.Deployment
-	Opt          kconfig.Opt
+	CanaryDeployName string
+	Opt              kconfig.Opt
 }
 
 type Canary struct {

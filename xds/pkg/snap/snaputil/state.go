@@ -11,12 +11,12 @@ const (
 	serviceSuffix = "kage-service"
 )
 
-func GenServiceName(targetName string) string {
-	return fmt.Sprintf("%s-%s", targetName, serviceSuffix)
+func GenTargetClusterName(name string) string {
+	return fmt.Sprintf("%s-%s", name, serviceSuffix)
 }
 
-func GenCanaryName(targetName string) string {
-	return fmt.Sprintf("%s-%s", targetName, canarySuffix)
+func GenCanaryClusterName(name string) string {
+	return fmt.Sprintf("%s-%s", name, canarySuffix)
 }
 
 func IsCanaryName(name string) bool {
