@@ -8,7 +8,7 @@ import (
 	xds "github.com/envoyproxy/go-control-plane/pkg/server"
 	"github.com/kage-cloud/kage/xds/pkg/config"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"net"
 	"time"
@@ -42,7 +42,7 @@ func (e *envoyControlPlane) StartAsync() error {
 
 	errChan := make(chan error)
 	go func() {
-		log.WithField("port", e.Config.Xds.Port).Info("Starting Xds server.")
+		log.WithField("port", e.Config.Xds.Port).Info("Starting control plane server.")
 		err := grpcServer.Serve(lis)
 		if err != nil {
 			errChan <- err

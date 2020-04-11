@@ -6,6 +6,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
+	"k8s.io/client-go/tools/clientcmd"
 	"os"
 	"strings"
 )
@@ -49,6 +50,9 @@ func defaultConfig() *Config {
 			Port:      8081,
 			Address:   "0.0.0.0",
 			AdminPort: 8082,
+		},
+		Kube: Kube{
+			Config: clientcmd.RecommendedHomeFile,
 		},
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/xds/pkg/model"
+	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -37,7 +38,10 @@ func (e *endpointsControllerService) Stop(blacklist labels.Set, opt kconfig.Opt)
 	}
 	for _, s := range svcs {
 		if err := e.LockdownService.ReleaseService(&s, opt); err != nil {
-			return err
+			log.WithField("name", s.Name).
+				WithField("namespace", s.Namespace).
+				WithError(err).
+				Error("Failed to release service from lockdown.")
 		}
 	}
 

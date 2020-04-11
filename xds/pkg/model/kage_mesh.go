@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +45,7 @@ type DeleteKageMeshSpec struct {
 }
 
 type KageMeshSpec struct {
+	Ctx            context.Context
 	Canary         *Canary
 	LockdownTarget bool
 	Opt            kconfig.Opt

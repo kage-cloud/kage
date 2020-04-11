@@ -7,6 +7,7 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/config"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
+	log "github.com/sirupsen/logrus"
 )
 
 type Package struct {
@@ -31,6 +32,17 @@ func kubeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
 	if err != nil {
 		panic(err)
 	}
+
+	if k.ApiConfig().InCluster() {
+		log.Info("Running in cluster mode")
+	} else {
+		log.WithField("config_path", conf.Kube.Config).Info("Not running in cluster mode")
+	}
+
+	log.WithField("context", k.ApiConfig().ApiConfig().CurrentContext).
+		WithField("client_version", "1.15.10").
+		Info("Configured Kubernetes client")
+
 	return axon.StructPtr(k)
 }
 
@@ -72,7 +84,6 @@ func storeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
 func (p *Package) Bindings() []axon.Binding {
 	return []axon.Binding{
 		axon.Bind(EndpointsControllerServiceKey).To().StructPtr(new(endpointsControllerService)),
-		axon.Bind(KageServiceKey).To().StructPtr(new(kageService)),
 		axon.Bind(CanaryServiceKey).To().StructPtr(new(canaryService)),
 		axon.Bind(EnvoyStateServiceKey).To().StructPtr(new(envoyStateService)),
 		axon.Bind(XdsEventHandlerKey).To().StructPtr(new(xdsEventHandler)),
@@ -81,9 +92,10 @@ func (p *Package) Bindings() []axon.Binding {
 		axon.Bind(CanaryControllerServiceKey).To().StructPtr(new(canaryControllerService)),
 		axon.Bind(StateSyncServiceKey).To().StructPtr(new(stateSyncService)),
 		axon.Bind(MeshConfigServiceKey).To().StructPtr(new(meshConfigService)),
+		axon.Bind(KageMeshServiceKey).To().StructPtr(new(kageMeshService)),
+		axon.Bind(KageServiceKey).To().Factory(kageServiceFactory).WithoutArgs(),
 		axon.Bind(KubeClientKey).To().Factory(kubeClientFactory).WithoutArgs(),
 		axon.Bind(LockdownServiceKey).To().Factory(lockDownServiceFactory).WithoutArgs(),
-		axon.Bind(KageMeshServiceKey).To().Factory(kageMeshFactory).WithoutArgs(),
 		axon.Bind(PersistentEnvoyStateStoreKey).To().Factory(persistentEnvoyStoreFactory).WithoutArgs(),
 		axon.Bind(StoreClientKey).To().Factory(storeClientFactory).WithoutArgs(),
 	}

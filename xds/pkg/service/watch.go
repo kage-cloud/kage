@@ -24,10 +24,34 @@ type WatchService interface {
 	Services(ctx context.Context, ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 	DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
 	DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
+	Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
 }
 
 type watchService struct {
 	KubeClient kube.Client `inject:"KubeClient"`
+}
+
+func (w *watchService) Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error {
+	deploys, wi := w.KubeClient.InformAndListDeploys(func(object metav1.Object) bool {
+		if v, ok := object.(*appsv1.Deployment); ok {
+			return deploy.Name == v.Name && deploy.Namespace == v.Namespace
+		}
+		return false
+	})
+
+	vList := &appsv1.DeploymentList{
+		Items: deploys,
+	}
+
+	for _, eh := range eventHandlers {
+		if err := eh.OnListEvent(vList); err != nil {
+			return err
+		}
+	}
+
+	w.createQueue(ctx, batchTime, wi, eventHandlers...)
+
+	return nil
 }
 
 func (w *watchService) Services(ctx context.Context, ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {

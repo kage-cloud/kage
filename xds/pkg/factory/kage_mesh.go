@@ -38,7 +38,7 @@ func (k *kageMeshFactory) BaselineConfigMap(name, canaryDeployName, targetDeploy
 }
 
 func (k *kageMeshFactory) Deploy(name, canaryDeployName, targetDeployName string, meshConfig *model.MeshConfig, ports []corev1.ContainerPort) *appsv1.Deployment {
-	labels := canaryutil.GenKageMeshLabels(meshConfig.Target.DeployName, meshConfig.Canary.DeployName)
+	labels := canaryutil.GenKageMeshLabels(targetDeployName, canaryDeployName)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,

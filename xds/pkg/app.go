@@ -27,20 +27,6 @@ type app struct {
 }
 
 func (a *app) Start() error {
-
-	format := &log.JSONFormatter{
-		TimestampFormat: a.Config.Log.TimeFormat,
-	}
-
-	logLvl, err := log.ParseLevel(a.Config.Log.Level)
-	if err != nil {
-		log.WithField("level", a.Config.Log.Level).Info("No valid log level found. Setting to info.")
-		logLvl = log.InfoLevel
-	}
-
-	log.SetFormatter(format)
-	log.SetLevel(logLvl)
-
 	if err := a.EnvoyControlPlane.StartAsync(); err != nil {
 		return err
 	}
@@ -69,8 +55,8 @@ func (a *app) Start() error {
 		}
 	}
 
-	log.WithField("port", a.Config.Server.Port).Info("Starting Kage server")
-	return e.Start(fmt.Sprintf("%d", a.Config.Server.Port))
+	log.WithField("port", a.Config.Server.Port).Info("Starting API server")
+	return e.Start(fmt.Sprintf(":%d", a.Config.Server.Port))
 }
 
 func customHTTPErrorHandler(defaultHandler echo.HTTPErrorHandler) echo.HTTPErrorHandler {

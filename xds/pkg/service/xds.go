@@ -16,7 +16,7 @@ const XdsServiceKey = "XdsService"
 type XdsService interface {
 	StartControlPlane(ctx context.Context, spec *xds.ControlPlaneSpec) error
 	StopControlPlane(nodeId string) error
-	SetRoutingWeight(routingSpec *xds.RoutingSpec) error
+	SetRoutingWeight(meshConfig *model.MeshConfig) error
 }
 
 type xdsService struct {

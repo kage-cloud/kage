@@ -23,6 +23,7 @@ type Client interface {
 	InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-chan watch.Event)
 	InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event)
 	InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event)
+	InformAndListDeploys(filter Filter) ([]appsv1.Deployment, <-chan watch.Event)
 	InformDeploy(filter Filter) <-chan watch.Event
 	WatchDeploy(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error)
 	WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error
@@ -45,6 +46,7 @@ type Client interface {
 	UpdateService(service *corev1.Service, opt kconfig.Opt) (*corev1.Service, error)
 
 	Api() kubernetes.Interface
+	ApiConfig() kconfig.Config
 }
 
 func NewClient(spec ClientSpec) (Client, error) {
@@ -82,6 +84,29 @@ type client struct {
 	mapLock                    sync.RWMutex
 }
 
+func (c *client) ApiConfig() kconfig.Config {
+	return c.Config
+}
+
+func (c *client) InformAndListDeploys(filter Filter) ([]appsv1.Deployment, <-chan watch.Event) {
+	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
+		object, b = obj.(*appsv1.Deployment)
+		return
+	})
+	informer := c.SharedInformerFactory.Core().V1().Endpoints().Informer()
+	informer.AddEventHandler(handler)
+	c.initInformer("deployment", informer)
+	c.waitForSync(informer)
+	eps, _ := c.SharedInformerFactory.Apps().V1().Deployments().Lister().List(labels.Everything())
+	result := make([]appsv1.Deployment, 0)
+	for _, e := range eps {
+		if filter(e) {
+			result = append(result, *e)
+		}
+	}
+	return result, ch
+}
+
 func (c *client) Api() kubernetes.Interface {
 	return c.Interface
 }
@@ -103,7 +128,7 @@ func (c *client) InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-ch
 	informer.AddEventHandler(handler)
 	c.initInformer("endpoints", informer)
 	c.waitForSync(informer)
-	eps, _ := c.SharedInformerFactory.Core().V1().Endpoints().Lister().List(labels.NewSelector())
+	eps, _ := c.SharedInformerFactory.Core().V1().Endpoints().Lister().List(labels.Everything())
 	result := make([]corev1.Endpoints, 0)
 	for _, e := range eps {
 		if filter(e) {
@@ -114,7 +139,7 @@ func (c *client) InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-ch
 }
 
 func (c *client) ListPods(selector labels.Selector, opt kconfig.Opt) ([]corev1.Pod, error) {
-	if c.informerRunning("pods") {
+	if c.informerRunning("pod") {
 		eps, err := c.SharedInformerFactory.Core().V1().Pods().Lister().Pods(opt.Namespace).List(selector)
 		if err != nil {
 			return nil, err
@@ -153,7 +178,7 @@ func (c *client) InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-ch
 	informer.AddEventHandler(handler)
 	c.initInformer("configmap", informer)
 	c.waitForSync(informer)
-	eps, _ := c.SharedInformerFactory.Core().V1().ConfigMaps().Lister().List(labels.NewSelector())
+	eps, _ := c.SharedInformerFactory.Core().V1().ConfigMaps().Lister().List(labels.Everything())
 	result := make([]corev1.ConfigMap, 0)
 	for _, e := range eps {
 		if filter(e) {
@@ -186,9 +211,9 @@ func (c *client) InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Eve
 	})
 	informer := c.SharedInformerFactory.Core().V1().Pods().Informer()
 	informer.AddEventHandler(handler)
-	c.initInformer("pods", informer)
+	c.initInformer("pod", informer)
 	c.waitForSync(informer)
-	eps, _ := c.SharedInformerFactory.Core().V1().Pods().Lister().List(labels.NewSelector())
+	eps, _ := c.SharedInformerFactory.Core().V1().Pods().Lister().List(labels.Everything())
 	result := make([]corev1.Pod, 0)
 	for _, e := range eps {
 		if filter(e) {

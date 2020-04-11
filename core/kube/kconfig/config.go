@@ -16,21 +16,32 @@ type Opt struct {
 
 type Config interface {
 	Api(context string) (kubernetes.Interface, error)
-}
-
-type config struct {
-	ApiConfig *api.Config
-	Interface kubernetes.Interface
+	InCluster() bool
+	ApiConfig() *api.Config
 }
 
 type ConfigSpec struct {
 	ConfigPath string
 }
 
+type config struct {
+	Config      *api.Config
+	Interface   kubernetes.Interface
+	IsInCluster bool
+}
+
+func (c *config) ApiConfig() *api.Config {
+	return c.Config
+}
+
+func (c *config) InCluster() bool {
+	return c.IsInCluster
+}
+
 func (c *config) Api(context string) (kubernetes.Interface, error) {
 	if c.Interface == nil {
 		conf, err := clientcmd.NewDefaultClientConfig(
-			*c.ApiConfig,
+			*c.Config,
 			&clientcmd.ConfigOverrides{
 				CurrentContext: context,
 			},
@@ -52,7 +63,7 @@ func NewConfigClient(spec ConfigSpec) (Config, error) {
 	if err != nil {
 		if err == rest.ErrNotInCluster {
 			conf, err := loadKubeConfig(spec.ConfigPath)
-			confClient.ApiConfig = conf
+			confClient.Config = conf
 			if err != nil {
 				return nil, err
 			}
@@ -61,6 +72,7 @@ func NewConfigClient(spec ConfigSpec) (Config, error) {
 		}
 	} else {
 		confClient.Interface, err = kubernetes.NewForConfig(conf)
+		confClient.IsInCluster = true
 		if err != nil {
 			return nil, err
 		}

@@ -50,8 +50,8 @@ func (c *canaryControllerService) Delete(req *exchange.DeleteCanaryRequest) erro
 	}
 
 	deleteSpec := &model.DeleteKageSpec{
-		Opt:              opt,
-		TargetDeployName: req.Name,
+		Opt:        opt,
+		CanaryName: req.Name,
 	}
 
 	return c.KageService.Delete(deleteSpec)
