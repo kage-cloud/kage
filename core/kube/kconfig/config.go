@@ -1,6 +1,7 @@
 package kconfig
 
 import (
+	"io/ioutil"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -17,20 +18,34 @@ type Opt struct {
 type Config interface {
 	Api(context string) (kubernetes.Interface, error)
 	InCluster() bool
-	ApiConfig() *api.Config
+	GetNamespace() string
+	Raw() *api.Config
 }
 
 type ConfigSpec struct {
 	ConfigPath string
+	Namespace  string
 }
 
 type config struct {
 	Config      *api.Config
 	Interface   kubernetes.Interface
 	IsInCluster bool
+	Namespace   string
 }
 
-func (c *config) ApiConfig() *api.Config {
+func (c *config) GetNamespace() string {
+	if c.Namespace == "" {
+		f, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		if err != nil {
+			return ""
+		}
+		c.Namespace = string(f)
+	}
+	return c.Namespace
+}
+
+func (c *config) Raw() *api.Config {
 	return c.Config
 }
 
@@ -62,11 +77,18 @@ func NewConfigClient(spec ConfigSpec) (Config, error) {
 	conf, err := rest.InClusterConfig()
 	if err != nil {
 		if err == rest.ErrNotInCluster {
-			conf, err := loadKubeConfig(spec.ConfigPath)
-			confClient.Config = conf
+			conf, kubeConf, err := loadKubeConfig(spec.ConfigPath)
 			if err != nil {
 				return nil, err
 			}
+			confClient.Config = conf
+			if spec.Namespace == "" {
+				spec.Namespace, _, err = kubeConf.Namespace()
+				if err != nil {
+					return nil, err
+				}
+			}
+			confClient.Namespace = spec.Namespace
 		} else {
 			return nil, err
 		}
@@ -81,18 +103,23 @@ func NewConfigClient(spec ConfigSpec) (Config, error) {
 	return confClient, nil
 }
 
-func loadKubeConfig(configPath string) (*api.Config, error) {
+func loadKubeConfig(configPath string) (*api.Config, clientcmd.ClientConfig, error) {
 	hd, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if configPath == "" {
 		configPath = path.Join(hd, ".kube", "config")
 	}
-	conf, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+	clientConf := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: configPath},
 		&clientcmd.ConfigOverrides{},
-	).RawConfig()
+	)
 
-	return &conf, err
+	conf, err := clientConf.RawConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &conf, clientConf, err
 }

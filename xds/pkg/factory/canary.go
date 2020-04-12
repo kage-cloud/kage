@@ -3,6 +3,7 @@ package factory
 import (
 	"github.com/kage-cloud/kage/xds/pkg/util/canaryutil"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 const CanaryFactoryKey = "CanaryFactory"
@@ -18,7 +19,7 @@ func (c *canaryFactory) FromDeployment(name string, deployment *appsv1.Deploymen
 	canary := deployment.DeepCopy()
 	canary.Spec.Replicas = &numReplicas
 
-	canaryutil.AppendCanaryLabels(deployment.Name, deployment.Labels)
+	deployment.Labels = labels.Merge(deployment.Labels, canaryutil.GenCanaryLabels(deployment.Name))
 	canary.Name = name
 
 	return canary

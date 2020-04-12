@@ -24,6 +24,7 @@ func kubeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
 	spec := kube.ClientSpec{
 		Config: kconfig.ConfigSpec{
 			ConfigPath: conf.Kube.Config,
+			Namespace:  conf.Kube.Namespace,
 		},
 		Context: conf.Kube.Context,
 	}
@@ -39,21 +40,21 @@ func kubeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
 		log.WithField("config_path", conf.Kube.Config).Info("Not running in cluster mode")
 	}
 
-	log.WithField("context", k.ApiConfig().ApiConfig().CurrentContext).
+	log.WithField("context", k.ApiConfig().Raw().CurrentContext).
 		WithField("client_version", "1.15.10").
+		WithField("namespace", k.ApiConfig().GetNamespace()).
 		Info("Configured Kubernetes client")
 
 	return axon.StructPtr(k)
 }
 
 func persistentEnvoyStoreFactory(inj axon.Injector, _ axon.Args) axon.Instance {
-	conf := inj.GetStructPtr(config.ConfigKey).(*config.Config)
+	client := inj.GetStructPtr(KubeClientKey).(kube.Client)
 	var persStore store.EnvoyStatePersistentStore
-	if conf.Kube.Namespace == "" {
-		client := inj.GetStructPtr(KubeClientKey).(kube.Client)
+	if client.ApiConfig().InCluster() {
 		spec := &store.KubeStoreSpec{
 			Interface: client.Api(),
-			Namespace: conf.Kube.Namespace,
+			Namespace: client.ApiConfig().GetNamespace(),
 		}
 		var err error
 		persStore, err = store.NewKubeStore(spec)

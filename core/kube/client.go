@@ -112,11 +112,7 @@ func (c *client) Api() kubernetes.Interface {
 }
 
 func (c *client) UpdateEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.CoreV1().Endpoints(opt.Namespace).Update(ep)
+	return c.Api().CoreV1().Endpoints(opt.Namespace).Update(ep)
 }
 
 func (c *client) InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-chan watch.Event) {
@@ -150,11 +146,7 @@ func (c *client) ListPods(selector labels.Selector, opt kconfig.Opt) ([]corev1.P
 		}
 		return result, nil
 	}
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	items, err := inter.CoreV1().Pods(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	items, err := c.Api().CoreV1().Pods(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -162,11 +154,8 @@ func (c *client) ListPods(selector labels.Selector, opt kconfig.Opt) ([]corev1.P
 }
 
 func (c *client) CreateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.AppsV1().Deployments(opt.Namespace).Create(deploy)
+	deploy.ResourceVersion = ""
+	return c.Api().AppsV1().Deployments(opt.Namespace).Create(deploy)
 }
 
 func (c *client) InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event) {
@@ -189,19 +178,11 @@ func (c *client) InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-ch
 }
 
 func (c *client) UpdateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.AppsV1().Deployments(opt.Namespace).Update(deploy)
+	return c.Api().AppsV1().Deployments(opt.Namespace).Update(deploy)
 }
 
 func (c *client) UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.CoreV1().Pods(opt.Namespace).Update(pod)
+	return c.Api().CoreV1().Pods(opt.Namespace).Update(pod)
 }
 
 func (c *client) InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event) {
@@ -235,11 +216,7 @@ func (c *client) ListEndpoints(selector labels.Selector, opt kconfig.Opt) ([]cor
 		}
 		return result, nil
 	}
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	items, err := inter.CoreV1().Endpoints(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	items, err := c.Api().CoreV1().Endpoints(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -289,11 +266,7 @@ func (c *client) ListServices(selector labels.Selector, opt kconfig.Opt) ([]core
 		}
 		return result, nil
 	}
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	items, err := inter.CoreV1().Services(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	items, err := c.Api().CoreV1().Services(opt.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -301,27 +274,15 @@ func (c *client) ListServices(selector labels.Selector, opt kconfig.Opt) ([]core
 }
 
 func (c *client) GetService(name string, opt kconfig.Opt) (*corev1.Service, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.CoreV1().Services(opt.Namespace).Get(name, metav1.GetOptions{})
+	return c.Api().CoreV1().Services(opt.Namespace).Get(name, metav1.GetOptions{})
 }
 
 func (c *client) UpdateService(service *corev1.Service, opt kconfig.Opt) (*corev1.Service, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.CoreV1().Services(opt.Namespace).Update(service)
+	return c.Api().CoreV1().Services(opt.Namespace).Update(service)
 }
 
 func (c *client) WatchDeploy(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.AppsV1().Deployments(opt.Namespace).Watch(lo)
+	return c.Api().AppsV1().Deployments(opt.Namespace).Watch(lo)
 }
 
 func (c *client) WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error {
@@ -364,50 +325,30 @@ func (c *client) GetEndpoints(name string, opt kconfig.Opt) (*corev1.Endpoints, 
 	if c.informerRunning("endpoints") {
 		return c.SharedInformerFactory.Core().V1().Endpoints().Lister().Endpoints(opt.Namespace).Get(name)
 	}
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.CoreV1().Endpoints(opt.Namespace).Get(name, metav1.GetOptions{})
+	return c.Api().CoreV1().Endpoints(opt.Namespace).Get(name, metav1.GetOptions{})
 }
 
 func (c *client) DeleteDeploy(name string, opt kconfig.Opt) error {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return err
-	}
-	return inter.AppsV1().Deployments(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	return c.Api().AppsV1().Deployments(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
 }
 
 func (c *client) GetDeploy(name string, opt kconfig.Opt) (*appsv1.Deployment, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.AppsV1().Deployments(opt.Namespace).Get(name, metav1.GetOptions{})
+	return c.Api().AppsV1().Deployments(opt.Namespace).Get(name, metav1.GetOptions{})
 }
 
 func (c *client) UpsertDeploy(dep *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	deploy, err := inter.AppsV1().Deployments(opt.Namespace).Create(dep)
+	deploy, err := c.Api().AppsV1().Deployments(opt.Namespace).Create(dep)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			return inter.AppsV1().Deployments(opt.Namespace).Update(dep)
+			return c.Api().AppsV1().Deployments(opt.Namespace).Update(dep)
 		}
 	}
 	return deploy, nil
 }
 
 func (c *client) ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev1.ConfigMap, error) {
-	api, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
 
-	cmList, err := api.CoreV1().ConfigMaps(opt.Namespace).List(lo)
+	cmList, err := c.Api().CoreV1().ConfigMaps(opt.Namespace).List(lo)
 	if err != nil {
 		return nil, err
 	}
@@ -421,21 +362,11 @@ func (c *client) ListConfigMaps(lo metav1.ListOptions, opt kconfig.Opt) ([]corev
 }
 
 func (c *client) DeleteConfigMap(name string, opt kconfig.Opt) error {
-	api, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return err
-	}
-
-	return api.CoreV1().ConfigMaps(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	return c.Api().CoreV1().ConfigMaps(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
 }
 
 func (c *client) UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error) {
-	api, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-
-	cmApi := api.CoreV1().ConfigMaps(opt.Namespace)
+	cmApi := c.Api().CoreV1().ConfigMaps(opt.Namespace)
 
 	out, err := cmApi.Create(cm)
 	if errors.IsAlreadyExists(err) {
@@ -446,20 +377,11 @@ func (c *client) UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1
 }
 
 func (c *client) GetConfigMap(name string, opt kconfig.Opt) (*corev1.ConfigMap, error) {
-	api, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-
-	return api.CoreV1().ConfigMaps(opt.Namespace).Get(name, metav1.GetOptions{})
+	return c.Api().CoreV1().ConfigMaps(opt.Namespace).Get(name, metav1.GetOptions{})
 }
 
 func (c *client) WatchPods(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error) {
-	inter, err := c.Config.Api(opt.Context)
-	if err != nil {
-		return nil, err
-	}
-	return inter.CoreV1().Pods(opt.Namespace).Watch(lo)
+	return c.Api().CoreV1().Pods(opt.Namespace).Watch(lo)
 }
 
 func (c *client) getLatestCondition(dep *appsv1.Deployment) *appsv1.DeploymentCondition {

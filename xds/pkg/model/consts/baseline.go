@@ -6,7 +6,7 @@ admin:
   address:
     socket_address:
       address: 127.0.0.1
-      port_value: {{- AdminPort}}
+      port_value: {{- .AdminPort}}
 node:
   cluster: {{- .NodeCluster}}
   id: {{- .NodeId}}
@@ -24,8 +24,8 @@ static_resources:
     - connect_timeout: 1s
       hosts:
         - socket_address:
-            address: {{- XdsAddress}}
-            port_value: {{- XdsPort}}
+            address: {{- .XdsAddress}}
+            port_value: {{- .XdsPort}}
       http2_protocol_options: {}
       name: xds
       type: STATIC
@@ -54,5 +54,5 @@ static_resources:
             set_node_on_first_message_only: true
             grpc_services:
               - envoy_grpc:
-                  cluster_name: {{- .XdsClusterName}}
+                  cluster_name: xds
 `

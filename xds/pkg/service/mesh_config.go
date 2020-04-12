@@ -7,7 +7,6 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
-	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/util"
 	appsv1 "k8s.io/api/apps/v1"
 	"text/template"
@@ -18,12 +17,40 @@ const MeshConfigServiceKey = "MeshConfigService"
 type MeshConfigService interface {
 	Create(spec *model.MeshConfigSpec) (*model.MeshConfig, error)
 	Get(kageMeshDeploy *appsv1.Deployment) (*model.MeshConfig, error)
+	BaselineConfig(meshConfig *model.MeshConfig) ([]byte, error)
 }
 
 type meshConfigService struct {
 	Config            *config.Config    `inject:"Config"`
 	StoreClient       snap.StoreClient  `inject:"StoreClient"`
 	EnvoyStateService EnvoyStateService `inject:"EnvoyStateService"`
+}
+
+func (m *meshConfigService) BaselineConfig(meshConfig *model.MeshConfig) ([]byte, error) {
+	tmpl := template.New("")
+
+	t, err := tmpl.Parse(consts.BaselineConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+
+	baseline := model.Baseline{
+		NodeId:             meshConfig.NodeId,
+		NodeCluster:        meshConfig.Canary.Name,
+		XdsAddress:         m.Config.Xds.Address,
+		XdsPort:            m.Config.Xds.Port,
+		AdminPort:          m.Config.Xds.AdminPort,
+		ServiceClusterName: meshConfig.Target.Name,
+		CanaryClusterName:  meshConfig.Canary.Name,
+	}
+
+	if err := t.Execute(buf, baseline); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func (m *meshConfigService) Get(kageMeshDeploy *appsv1.Deployment) (*model.MeshConfig, error) {
@@ -56,38 +83,16 @@ func (m *meshConfigService) Get(kageMeshDeploy *appsv1.Deployment) (*model.MeshC
 }
 
 func (m *meshConfigService) Create(spec *model.MeshConfigSpec) (*model.MeshConfig, error) {
-	tmpl := template.New("")
-	t, err := tmpl.Parse(consts.BaselineConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	buf := bytes.NewBuffer([]byte{})
-
 	nodeId, err := uuid.NewUUID()
 	if err != nil {
 		return nil, err
 	}
 
-	serviceName := snaputil.GenTargetClusterName(spec.TargetDeployName)
-	canaryName := snaputil.GenCanaryClusterName(spec.CanaryDeployName)
-
-	baseline := model.Baseline{
-		NodeId:             nodeId.String(),
-		NodeCluster:        spec.CanaryDeployName,
-		XdsAddress:         m.Config.Xds.Address,
-		XdsPort:            m.Config.Xds.Port,
-		AdminPort:          m.Config.Xds.AdminPort,
-		ServiceClusterName: serviceName,
-		CanaryClusterName:  canaryName,
-	}
-
-	if err := t.Execute(buf, baseline); err != nil {
-		return nil, err
-	}
+	serviceName := spec.TargetDeployName
+	canaryName := spec.CanaryDeployName
 
 	meshConfig := &model.MeshConfig{
-		NodeId: baseline.NodeId,
+		NodeId: nodeId.String(),
 		Canary: model.MeshCluster{
 			Name: canaryName,
 		},

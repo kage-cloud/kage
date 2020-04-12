@@ -11,6 +11,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
+	"net/http"
+	"path"
 )
 
 const AppKey = "App"
@@ -45,13 +47,13 @@ func (a *app) Start() error {
 	e.HidePort = true
 	e.HTTPErrorHandler = customHTTPErrorHandler(e.DefaultHTTPErrorHandler)
 
+	api := e.Group("/api")
 	for _, v := range a.Controllers {
 		c := v.GetStructPtr().(controller.Controller)
 
 		for _, r := range c.Routes() {
-			api := e.Group("/api")
-			api = api.Group(c.Group())
-			api.Add(r.Method, r.Path, r.Handler)
+			group := api.Group(path.Join("/", c.Group()))
+			group.Add(r.Method, r.Path, r.Handler)
 		}
 	}
 
@@ -61,6 +63,16 @@ func (a *app) Start() error {
 
 func customHTTPErrorHandler(defaultHandler echo.HTTPErrorHandler) echo.HTTPErrorHandler {
 	return func(err error, context echo.Context) {
-		defaultHandler(echo.NewHTTPError(except.ToHttpStatus(err), err.Error()), context)
+		status := except.ToHttpStatus(err)
+		if v, ok := err.(*echo.HTTPError); ok {
+			defaultHandler(v, context)
+		} else {
+			if status == http.StatusInternalServerError {
+				defaultHandler(echo.NewHTTPError(status, http.StatusText(status)), context)
+			} else {
+				defaultHandler(echo.NewHTTPError(status, err.Error()), context)
+			}
+		}
+		log.WithField("code", status).WithError(err).Error("An error occurred")
 	}
 }

@@ -25,6 +25,10 @@ func (c *canaryController) Create(ctx echo.Context) error {
 		return err
 	}
 
+	if err := req.Validate(); err != nil {
+		return err
+	}
+
 	res, err := c.CanaryControllerService.Create(req)
 	if err != nil {
 		return err

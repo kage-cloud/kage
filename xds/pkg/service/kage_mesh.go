@@ -80,6 +80,17 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
+	baselineContent, err := k.MeshConfigService.BaselineConfig(meshConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	meshConfigMap := k.KageMeshFactory.BaselineConfigMap(kageMeshName, spec.Canary.CanaryDeploy.Name, spec.Canary.TargetDeploy.Name, meshConfig, baselineContent)
+	cm, err := k.KubeClient.UpsertConfigMap(meshConfigMap, opt)
+	if err != nil {
+		return nil, err
+	}
+
 	containerPorts := make([]corev1.ContainerPort, 0)
 	for _, cont := range spec.Canary.TargetDeploy.Spec.Template.Spec.Containers {
 		for _, cp := range cont.Ports {
@@ -89,8 +100,8 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 
 	kageMeshDeploy := k.KageMeshFactory.Deploy(kageMeshName, spec.Canary.CanaryDeploy.Name, spec.Canary.TargetDeploy.Name, meshConfig, containerPorts)
 
-	labels.Merge(kageMeshDeploy.Labels, spec.Canary.TargetDeploy.Labels)
-	labels.Merge(kageMeshDeploy.Spec.Template.Labels, spec.Canary.TargetDeploy.Spec.Template.Labels)
+	kageMeshDeploy.Labels = labels.Merge(kageMeshDeploy.Labels, spec.Canary.TargetDeploy.Labels)
+	kageMeshDeploy.Spec.Template.Labels = labels.Merge(kageMeshDeploy.Spec.Template.Labels, spec.Canary.TargetDeploy.Spec.Template.Labels)
 
 	cpSpec := &xds.ControlPlaneSpec{
 		TargetDeploy: spec.Canary.TargetDeploy,
@@ -162,8 +173,9 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 
 	return &model.KageMesh{
 		Name:       kageMeshName,
-		Deploy:     kageMeshDeploy,
 		MeshConfig: *meshConfig,
+		ConfigMap:  cm,
+		Deploy:     kageMeshDeploy,
 	}, nil
 }
 
