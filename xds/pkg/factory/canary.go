@@ -19,7 +19,7 @@ func (c *canaryFactory) FromDeployment(name string, deployment *appsv1.Deploymen
 	canary := deployment.DeepCopy()
 	canary.Spec.Replicas = &numReplicas
 
-	deployment.Labels = labels.Merge(deployment.Labels, canaryutil.GenCanaryLabels(deployment.Name))
+	canary.Labels = labels.Merge(deployment.Labels, canaryutil.GenCanaryLabels(deployment.Name))
 	canary.Name = name
 
 	return canary

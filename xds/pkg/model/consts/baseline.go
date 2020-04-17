@@ -2,14 +2,14 @@ package consts
 
 const BaselineConfig = `
 admin:
-  access_log_path: /dev/null
+  access_log_path: /tmp/admin_access.log
   address:
     socket_address:
       address: 127.0.0.1
-      port_value: {{- .AdminPort}}
+      port_value: {{.AdminPort}}
 node:
-  cluster: {{- .NodeCluster}}
-  id: {{- .NodeId}}
+  cluster: {{.NodeCluster}}
+  id: {{.NodeId}}
 
 dynamic_resources:
   lds_config:
@@ -24,12 +24,12 @@ static_resources:
     - connect_timeout: 1s
       hosts:
         - socket_address:
-            address: {{- .XdsAddress}}
-            port_value: {{- .XdsPort}}
+            address: {{.XdsAddress}}
+            port_value: {{.XdsPort}}
       http2_protocol_options: {}
       name: xds
       type: STATIC
-    - name: {{- .CanaryClusterName}}
+    - name: {{.CanaryClusterName}}
       connect_timeout: 1s
       type: EDS
       lb_policy: round_robin
@@ -42,7 +42,7 @@ static_resources:
             grpc_services:
               - envoy_grpc:
                   cluster_name: xds
-    - name: {{- .ServiceClusterName}}
+    - name: {{.ServiceClusterName}}
       connect_timeout: 1s
       type: EDS
       lb_policy: round_robin

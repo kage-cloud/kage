@@ -27,6 +27,7 @@ func MeshConfigAnnotation(annotations map[string]string) (*model.MeshConfigAnnot
 		if err := json.Unmarshal([]byte(v), anno); err != nil {
 			return nil, err
 		}
+		return anno, nil
 	}
 	return nil, except.NewError("Annotation %s could not be found", except.ErrNotFound, consts.AnnotationKageMesh)
 }

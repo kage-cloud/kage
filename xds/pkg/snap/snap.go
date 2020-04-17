@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
+	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"
 )
@@ -96,14 +97,17 @@ func (s *storeClient) Sync(nodeId string) error {
 func (s *storeClient) Delete(nodeId string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	log.WithField("node_id", nodeId).Debug("Deleting envoy state.")
 
 	if err := s.PersistentStore.Delete(nodeId); err != nil {
-		fmt.Printf("Failed to delete %s from the persistent store: %s", nodeId, err.Error())
+		log.WithField("node_id", nodeId).WithError(err).Error("Failed to envoy state from the persistent store.")
 	}
 
 	s.Cache.ClearSnapshot(nodeId)
 
 	delete(s.CurrentStates, nodeId)
+
+	log.WithField("node_id", nodeId).Debug("Deleted envoy state.")
 
 	return nil
 }
@@ -147,6 +151,7 @@ func (s *storeClient) Set(state *store.EnvoyState) error {
 }
 
 func (s *storeClient) set(state *store.EnvoyState) error {
+	log.WithField("node_id", state.NodeId).Debug("Saving envoy state")
 	prevState, _ := s.get(state.NodeId)
 	routes, routeResources := s.routes(prevState, state.Routes)
 	listeners, listenerResources := s.listeners(prevState, state.Listeners)
@@ -163,6 +168,7 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 
 	handler, err := s.PersistentStore.Save(compositeState)
 	if err != nil {
+		log.WithField("node_id", state.NodeId).WithError(err).Debug("Failed to persist envoy state.")
 		return err
 	}
 
@@ -174,11 +180,14 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 		listenerResources,
 		nil,
 	)); err != nil {
+		log.WithField("node_id", state.NodeId).WithError(err).Debug("Failed to save envoy state in the cache.")
 		_ = handler.Revert()
 		return err
 	}
 
 	s.CurrentStates[state.NodeId] = *compositeState
+
+	log.WithField("node_id", state.NodeId).Debug("Saved envoy state")
 
 	return nil
 }
@@ -196,7 +205,7 @@ func (s *storeClient) routes(prevState *store.EnvoyState, routes []route.Route) 
 }
 
 func (s *storeClient) endpoints(prevState *store.EnvoyState, endpoints []endpoint.Endpoint) ([]endpoint.Endpoint, []cache.Resource) {
-	if len(endpoints) <= 0 {
+	if len(endpoints) <= 0 && prevState != nil {
 		endpoints = prevState.Endpoints
 	}
 	resources := make([]cache.Resource, len(endpoints))
@@ -208,7 +217,7 @@ func (s *storeClient) endpoints(prevState *store.EnvoyState, endpoints []endpoin
 }
 
 func (s *storeClient) listeners(prevState *store.EnvoyState, listeners []api.Listener) ([]api.Listener, []cache.Resource) {
-	if len(listeners) <= 0 {
+	if len(listeners) <= 0 && prevState != nil {
 		listeners = prevState.Listeners
 	}
 	resources := make([]cache.Resource, len(listeners))

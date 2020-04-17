@@ -1,8 +1,9 @@
 package store
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -56,7 +57,8 @@ func (k *kubeStore) FetchAll() ([]EnvoyState, error) {
 }
 
 func (k *kubeStore) Save(state *EnvoyState) (SaveHandler, error) {
-	b, err := json.Marshal(state)
+	buf := bytes.NewBuffer([]byte{})
+	err := new(jsonpb.Marshaler).Marshal(buf, state)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +73,7 @@ func (k *kubeStore) Save(state *EnvoyState) (SaveHandler, error) {
 			},
 		},
 		BinaryData: map[string][]byte{
-			state.NodeId: b,
+			state.NodeId: buf.Bytes(),
 		},
 	}
 
@@ -106,7 +108,7 @@ func (k *kubeStore) Fetch(name string) (*EnvoyState, error) {
 
 func (k *kubeStore) configMapToEnvoyState(cm *corev1.ConfigMap) (*EnvoyState, error) {
 	es := new(EnvoyState)
-	if err := json.Unmarshal(cm.BinaryData[cm.Name], es); err != nil {
+	if err := jsonpb.Unmarshal(bytes.NewReader(cm.BinaryData[cm.Name]), es); err != nil {
 		return nil, err
 	}
 	return es, nil

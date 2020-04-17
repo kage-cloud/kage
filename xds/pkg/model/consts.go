@@ -1,5 +1,5 @@
 package model
 
 const (
-	XdsClusterName = "xds_cluster"
+	XdsClusterName = "xds"
 )

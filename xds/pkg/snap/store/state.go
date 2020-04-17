@@ -4,10 +4,13 @@ import (
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
+	"github.com/golang/protobuf/proto"
 	"time"
 )
 
 type EnvoyState struct {
+	proto.Message
+
 	// The NodeID in the Envoy configuration. Required.
 	NodeId string `json:"node_id"`
 

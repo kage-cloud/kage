@@ -20,8 +20,7 @@ const WatchServiceKey = "WatchService"
 type WatchService interface {
 	Pods(ctx context.Context, selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 
-	// Watch services who's selectors match the specified labels
-	Services(ctx context.Context, ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
+	Services(ctx context.Context, filter kube.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 	DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
 	DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
 	Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
@@ -54,13 +53,8 @@ func (w *watchService) Deployment(ctx context.Context, deploy *appsv1.Deployment
 	return nil
 }
 
-func (w *watchService) Services(ctx context.Context, ls map[string]string, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
-	svcs, wi := w.KubeClient.InformAndListServices(func(object metav1.Object) bool {
-		if v, ok := object.(*corev1.Service); ok {
-			return object.GetNamespace() == opt.Namespace && labels.SelectorFromSet(v.Spec.Selector).Matches(labels.Set(ls))
-		}
-		return false
-	})
+func (w *watchService) Services(ctx context.Context, filter kube.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
+	svcs, wi := w.KubeClient.InformAndListServices(filter)
 
 	svcList := &corev1.ServiceList{
 		Items: svcs,

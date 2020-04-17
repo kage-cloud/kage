@@ -47,3 +47,7 @@ func ObjectKey(object runtime.Object, postfix ...string) string {
 
 	return join
 }
+
+func DeploymentIsReady(dep *appsv1.Deployment) bool {
+	return dep.Status.ReadyReplicas == dep.Status.Replicas
+}

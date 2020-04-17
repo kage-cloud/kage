@@ -74,5 +74,9 @@ func (x *xdsService) StartControlPlane(ctx context.Context, spec *xds.ControlPla
 
 func (x *xdsService) controlPlaneExists(nodeId string) bool {
 	_, err := x.StoreClient.Get(nodeId)
-	return err != nil
+	exists := err == nil
+	if !exists {
+		log.WithField("node_id", nodeId).WithError(err).Debug("Control plane doesn't exist")
+	}
+	return exists
 }

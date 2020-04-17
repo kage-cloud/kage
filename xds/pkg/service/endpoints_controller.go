@@ -50,7 +50,7 @@ func (e *endpointsControllerService) Stop(blacklist labels.Set, opt kconfig.Opt)
 
 func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.Context, blacklist labels.Set, opt kconfig.Opt) error {
 	blacklistSelector := blacklist.AsSelectorPreValidated()
-	err := e.WatchService.Services(ctx, blacklist, time.Second, opt, &model.InformEventHandlerFuncs{
+	err := e.WatchService.Services(ctx, e.watchFilter(blacklist, opt), time.Second, opt, &model.InformEventHandlerFuncs{
 		OnWatch: func(event watch.Event) bool {
 			svc, ok := event.Object.(*corev1.Service)
 			if !ok {
@@ -78,6 +78,7 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 			}
 			err := e.WatchService.Pods(ctx, blacklistSelector, 3*time.Second, opt, &model.InformEventHandlerFuncs{
 				OnWatch: func(event watch.Event) bool {
+
 					switch event.Type {
 					case watch.Modified, watch.Added, watch.Deleted:
 						for _, s := range svcList.Items {
@@ -117,11 +118,13 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 	return nil
 }
 func (e *endpointsControllerService) syncService(svc *corev1.Service, blackList labels.Selector, opt kconfig.Opt) error {
-	if svc.Spec.Selector == nil {
-		return nil
+	svcSet, err := e.getServiceSelector(svc)
+	if err != nil {
+		return err
 	}
 
-	svcSelector := labels.SelectorFromSet(svc.Spec.Selector)
+	svcSelector := svcSet.AsSelectorPreValidated()
+
 	pods, err := e.KubeClient.ListPods(svcSelector, opt)
 	if err != nil {
 		return err
@@ -164,4 +167,30 @@ func (e *endpointsControllerService) syncService(svc *corev1.Service, blackList 
 	}
 
 	return nil
+}
+
+func (e *endpointsControllerService) watchFilter(blacklist labels.Set, opt kconfig.Opt) kube.Filter {
+	return func(object metav1.Object) bool {
+		if v, ok := object.(*corev1.Service); ok {
+			sel, err := e.getServiceSelector(v)
+			if err != nil {
+				return false
+			}
+			filter := object.GetNamespace() == opt.Namespace && v.Spec.Selector != nil && labels.SelectorFromSet(sel).Matches(labels.Set(blacklist))
+			return filter
+		}
+		return false
+	}
+}
+
+func (e *endpointsControllerService) getServiceSelector(svc *corev1.Service) (labels.Set, error) {
+	sel := svc.Spec.Selector
+	if sel == nil {
+		ld, err := e.LockdownService.GetLockDown(svc)
+		if err != nil {
+			return nil, err
+		}
+		sel = ld.DeletedSelector
+	}
+	return sel, nil
 }

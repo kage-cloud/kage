@@ -73,6 +73,6 @@ func customHTTPErrorHandler(defaultHandler echo.HTTPErrorHandler) echo.HTTPError
 				defaultHandler(echo.NewHTTPError(status, err.Error()), context)
 			}
 		}
-		log.WithField("code", status).WithError(err).Error("An error occurred")
+		log.WithField("code", status).WithError(err).Trace("An error occurred")
 	}
 }

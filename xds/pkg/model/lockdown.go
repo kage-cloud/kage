@@ -1,5 +1,5 @@
 package model
 
 type Lockdown struct {
-	DeletedSet map[string]string `json:"deleted_labels"`
+	DeletedSelector map[string]string `json:"deleted_selector"`
 }

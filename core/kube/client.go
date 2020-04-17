@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -93,7 +94,7 @@ func (c *client) InformAndListDeploys(filter Filter) ([]appsv1.Deployment, <-cha
 		object, b = obj.(*appsv1.Deployment)
 		return
 	})
-	informer := c.SharedInformerFactory.Core().V1().Endpoints().Informer()
+	informer := c.SharedInformerFactory.Apps().V1().Deployments().Informer()
 	informer.AddEventHandler(handler)
 	c.initInformer("deployment", informer)
 	c.waitForSync(informer)
@@ -286,6 +287,15 @@ func (c *client) WatchDeploy(lo metav1.ListOptions, opt kconfig.Opt) (watch.Inte
 }
 
 func (c *client) WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error {
+	dep, err := c.GetDeploy(name, opt)
+	if err != nil {
+		return err
+	}
+
+	if kubeutil.DeploymentIsReady(dep) {
+		return nil
+	}
+
 	wi, err := c.WatchDeploy(metav1.ListOptions{FieldSelector: fmt.Sprintf("metadata.name=%s", name)}, opt)
 	if err != nil {
 		return err
@@ -311,7 +321,7 @@ func (c *client) WaitTillDeployReady(name string, timeout time.Duration, opt kco
 			case watch.Modified:
 				if r.Object != nil {
 					if dep, ok := r.Object.(*appsv1.Deployment); ok {
-						if dep.Status.ReadyReplicas == dep.Status.Replicas {
+						if kubeutil.DeploymentIsReady(dep) {
 							return nil
 						}
 					}
@@ -341,6 +351,8 @@ func (c *client) UpsertDeploy(dep *appsv1.Deployment, opt kconfig.Opt) (*appsv1.
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 			return c.Api().AppsV1().Deployments(opt.Namespace).Update(dep)
+		} else {
+			return nil, err
 		}
 	}
 	return deploy, nil

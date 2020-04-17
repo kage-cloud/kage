@@ -1,13 +1,13 @@
 package service
 
 import (
-	"fmt"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/util/canaryutil"
+	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 )
@@ -76,7 +76,7 @@ func (c *canaryService) Create(spec *model.CreateCanarySpec) (*model.Canary, err
 
 	if err := c.KubeClient.WaitTillDeployReady(dep.Name, time.Second*30, spec.Opt); err != nil {
 		if err = c.KubeClient.DeleteDeploy(dep.Name, spec.Opt); err != nil {
-			fmt.Println("Failed to clean up canary", dep.Name, ":", err.Error())
+			log.WithField("name", dep.Name).WithError(err).Error("Failed to clean up canary")
 		}
 		return nil, err
 	}

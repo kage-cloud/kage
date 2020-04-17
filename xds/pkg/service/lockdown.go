@@ -27,6 +27,8 @@ type LockdownService interface {
 
 	GetLockedDownServices(opt kconfig.Opt) ([]corev1.Service, error)
 
+	GetLockDown(svc *corev1.Service) (*model.Lockdown, error)
+
 	IsLockedDown(obj metav1.Object) bool
 }
 
@@ -35,6 +37,14 @@ type lockdownService struct {
 	WatchService      WatchService `inject:"WatchService"`
 	selectorsByDeploy map[string]labels.Set
 	lock              sync.RWMutex
+}
+
+func (l *lockdownService) GetLockDown(svc *corev1.Service) (*model.Lockdown, error) {
+	ld := l.getLockDownMeta(svc)
+	if ld == nil {
+		return nil, except.NewError("%s does not have a lockdown annotation", except.ErrNotFound, svc.Name)
+	}
+	return ld, nil
 }
 
 func (l *lockdownService) GetLockedDownServices(opt kconfig.Opt) ([]corev1.Service, error) {
@@ -46,10 +56,10 @@ func (l *lockdownService) LockdownService(svc *corev1.Service, opt kconfig.Opt) 
 		return nil
 	}
 	if svc.Spec.Selector == nil {
-		return except.NewError("service %s's endpoints are already being managed by something else", except.ErrConflict, svc.Name)
+		return except.NewError("service %s's endpoints are already github.com/kage-cloud/kage/core/kubeanaged by something else", except.ErrConflict, svc.Name)
 	}
 
-	lockdown := &model.Lockdown{DeletedSet: svc.Spec.Selector}
+	lockdown := &model.Lockdown{DeletedSelector: svc.Spec.Selector}
 
 	svc.Spec.Selector = nil
 
@@ -66,7 +76,7 @@ func (l *lockdownService) ReleaseService(svc *corev1.Service, opt kconfig.Opt) e
 	deepCopy := svc.DeepCopy()
 	lockdown := l.getLockDownMeta(deepCopy)
 
-	deepCopy.Spec.Selector = lockdown.DeletedSet
+	deepCopy.Spec.Selector = lockdown.DeletedSelector
 	l.removeLockdownMeta(deepCopy)
 	if _, err := l.KubeClient.UpdateService(deepCopy, opt); err != nil {
 		return err
@@ -125,12 +135,12 @@ func (l *lockdownService) updateLockdownMeta(deployment *appsv1.Deployment, opt 
 	}
 	l.lock.RUnlock()
 	lockdown := &model.Lockdown{
-		DeletedSet: map[string]string{},
+		DeletedSelector: map[string]string{},
 	}
 	depCopy := deployment.DeepCopy()
 	for _, key := range labelKeys {
 		if v, ok := depCopy.Spec.Template.Labels[key]; ok {
-			lockdown.DeletedSet[key] = v
+			lockdown.DeletedSelector[key] = v
 		}
 	}
 

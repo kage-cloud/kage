@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
+	"path"
 )
 
 const KageMeshFactoryKey = "KageMeshFactory"
@@ -31,8 +32,8 @@ func (k *kageMeshFactory) BaselineConfigMap(name, canaryDeployName, targetDeploy
 				TargetClusterName: meshConfig.Target.Name,
 			}),
 		},
-		BinaryData: map[string][]byte{
-			consts.BaselineConfigMapFieldName: content,
+		Data: map[string]string{
+			consts.BaselineConfigMapFieldName: string(content),
 		},
 	}
 }
@@ -50,6 +51,7 @@ func (k *kageMeshFactory) Deploy(name, canaryDeployName, targetDeployName string
 			}),
 		},
 		Spec: appsv1.DeploymentSpec{
+			Selector: metav1.SetAsLabelSelector(labels),
 			Replicas: pointer.Int32Ptr(3),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -58,15 +60,16 @@ func (k *kageMeshFactory) Deploy(name, canaryDeployName, targetDeployName string
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
+							Name:  "kage-mesh",
 							Image: "envoyproxy/envoy:v1.13.1",
 							Command: []string{
-								"envoy", "-c", "/" + consts.BaselineConfigMapFieldName,
+								"envoy", "-c", path.Join("/etc/envoy", consts.BaselineConfigMapFieldName),
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      consts.BaselineConfigMapName,
 									ReadOnly:  true,
-									MountPath: "/",
+									MountPath: "/etc/envoy",
 								},
 							},
 							Ports: ports,
@@ -78,7 +81,7 @@ func (k *kageMeshFactory) Deploy(name, canaryDeployName, targetDeployName string
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
-										Name: consts.BaselineConfigMapName,
+										Name: name,
 									},
 									Optional: pointer.BoolPtr(false),
 								},
