@@ -47,7 +47,7 @@ func (x *xdsEventHandler) onList(nodeId string) model.OnListEventFunc {
 }
 
 func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
-	return func(event watch.Event) bool {
+	return func(event watch.Event) (error, bool) {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
 			switch event.Type {
 			case watch.Error, watch.Deleted:
@@ -57,6 +57,7 @@ func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
 						WithField("node_id", nodeId).
 						WithError(err).
 						Error("Failed to remove pod from control plane.")
+					return err, true
 				}
 				break
 			case watch.Modified, watch.Added:
@@ -66,10 +67,11 @@ func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
 						WithField("node_id", nodeId).
 						WithError(err).
 						Error("Failed to add pod to control plane.")
+					return err, true
 				}
 			}
 		}
-		return true
+		return nil, true
 	}
 }
 

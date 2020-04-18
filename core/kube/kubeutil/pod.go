@@ -2,11 +2,11 @@ package kubeutil
 
 import (
 	"fmt"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func FindPort(pod *v1.Pod, svcPort *v1.ServicePort) (int, error) {
+func FindPort(pod *corev1.Pod, svcPort *corev1.ServicePort) (int, error) {
 	portName := svcPort.TargetPort
 	switch portName.Type {
 	case intstr.String:

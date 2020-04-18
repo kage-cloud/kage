@@ -55,12 +55,22 @@ func (k *kageMeshService) DeleteFromDeploy(kageMeshDeploy *appsv1.Deployment) er
 		return err
 	}
 
-	targetDeploy, err := k.KubeClient.Api().AppsV1().Deployments(kageMeshDeploy.Namespace).Get(targetName, metav1.GetOptions{})
+	canaryName, err := canaryutil.CanaryNameFromLabels(kageMeshDeploy.Labels)
 	if err != nil {
 		return err
 	}
 
-	blacklist, _ := metav1.LabelSelectorAsMap(targetDeploy.Spec.Selector)
+	blacklist := make([]appsv1.Deployment, 0)
+
+	targetDeploy, err := k.KubeClient.Api().AppsV1().Deployments(kageMeshDeploy.Namespace).Get(targetName, metav1.GetOptions{})
+	if err == nil {
+		blacklist = append(blacklist, *targetDeploy)
+	}
+
+	canaryDeploy, err := k.KubeClient.Api().AppsV1().Deployments(kageMeshDeploy.Namespace).Get(canaryName, metav1.GetOptions{})
+	if err == nil {
+		blacklist = append(blacklist, *canaryDeploy)
+	}
 
 	return k.delete(meshConfig, blacklist, kconfig.Opt{Namespace: kageMeshDeploy.Namespace})
 }
@@ -103,16 +113,6 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 	kageMeshDeploy.Labels = labels.Merge(kageMeshDeploy.Labels, spec.Canary.TargetDeploy.Labels)
 	kageMeshDeploy.Spec.Template.Labels = labels.Merge(kageMeshDeploy.Spec.Template.Labels, spec.Canary.TargetDeploy.Spec.Template.Labels)
 
-	cpSpec := &xds.ControlPlaneSpec{
-		TargetDeploy: spec.Canary.TargetDeploy,
-		CanaryDeploy: spec.Canary.CanaryDeploy,
-		MeshConfig:   *meshConfig,
-	}
-	if err := k.XdsService.StartControlPlane(spec.Ctx, cpSpec); err != nil {
-		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
-		return nil, err
-	}
-
 	kageMeshDeploy, err = k.KubeClient.UpsertDeploy(kageMeshDeploy, opt)
 	if err != nil {
 		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
@@ -125,7 +125,17 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
-	blacklist, _ := metav1.LabelSelectorAsMap(spec.Canary.TargetDeploy.Spec.Selector)
+	cpSpec := &xds.ControlPlaneSpec{
+		TargetDeploy: spec.Canary.TargetDeploy,
+		CanaryDeploy: spec.Canary.CanaryDeploy,
+		MeshConfig:   *meshConfig,
+	}
+	if err := k.XdsService.StartControlPlane(spec.Ctx, cpSpec); err != nil {
+		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
+		return nil, err
+	}
+
+	blacklist := []appsv1.Deployment{*spec.Canary.CanaryDeploy, *spec.Canary.TargetDeploy}
 	if err := k.EndpointsControllerService.StartWithBlacklistedEndpoints(spec.Ctx, blacklist, opt); err != nil {
 		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
 		_ = k.KubeClient.DeleteDeploy(kageMeshDeploy.Name, opt)
@@ -225,7 +235,7 @@ func (k *kageMeshService) fetchDeployFromCanary(canaryDeployName string, opt kco
 	return &kageMeshDeployLists.Items[0], nil
 }
 
-func (k *kageMeshService) delete(meshConfig *model.MeshConfig, blacklist labels.Set, opt kconfig.Opt) error {
+func (k *kageMeshService) delete(meshConfig *model.MeshConfig, blacklist []appsv1.Deployment, opt kconfig.Opt) error {
 	if err := k.EndpointsControllerService.Stop(blacklist, opt); err != nil {
 		return err
 	}

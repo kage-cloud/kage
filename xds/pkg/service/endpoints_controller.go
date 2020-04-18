@@ -2,13 +2,15 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
+	"github.com/kage-cloud/kage/core/kube/objconv"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	log "github.com/sirupsen/logrus"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -20,8 +22,8 @@ import (
 const EndpointsControllerServiceKey = "EndpointsControllerService"
 
 type EndpointsControllerService interface {
-	StartWithBlacklistedEndpoints(ctx context.Context, blacklist labels.Set, opt kconfig.Opt) error
-	Stop(blacklist labels.Set, opt kconfig.Opt) error
+	StartWithBlacklistedEndpoints(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error
+	Stop(blacklist []appsv1.Deployment, opt kconfig.Opt) error
 }
 
 type endpointsControllerService struct {
@@ -31,11 +33,29 @@ type endpointsControllerService struct {
 	KubeClient      kube.Client     `inject:"KubeClient"`
 }
 
-func (e *endpointsControllerService) Stop(blacklist labels.Set, opt kconfig.Opt) error {
-	svcs, err := e.KubeClient.ListServices(blacklist.AsSelectorPreValidated(), opt)
+func (e *endpointsControllerService) Stop(blacklist []appsv1.Deployment, opt kconfig.Opt) error {
+	allSvcs, err := e.KubeClient.ListServices(labels.Everything(), opt)
 	if err != nil {
 		return err
 	}
+
+	svcs := make([]corev1.Service, 0)
+	for _, svc := range allSvcs {
+		selectorSet, err := e.getServiceSelectorSet(&svc)
+		if err != nil {
+			continue
+		}
+
+		selector := selectorSet.AsSelectorPreValidated()
+
+		for _, b := range blacklist {
+			if selector.Matches(labels.Set(b.Spec.Template.Labels)) {
+				svcs = append(svcs, svc)
+				break
+			}
+		}
+	}
+
 	for _, s := range svcs {
 		if err := e.LockdownService.ReleaseService(&s, opt); err != nil {
 			log.WithField("name", s.Name).
@@ -48,50 +68,99 @@ func (e *endpointsControllerService) Stop(blacklist labels.Set, opt kconfig.Opt)
 	return nil
 }
 
-func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.Context, blacklist labels.Set, opt kconfig.Opt) error {
-	blacklistSelector := blacklist.AsSelectorPreValidated()
+func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error {
 	err := e.WatchService.Services(ctx, e.watchFilter(blacklist, opt), time.Second, opt, &model.InformEventHandlerFuncs{
-		OnWatch: func(event watch.Event) bool {
+		OnWatch: func(event watch.Event) (error, bool) {
 			svc, ok := event.Object.(*corev1.Service)
 			if !ok {
-				return ok
+				return except.NewError("Event did not contain service", except.ErrInvalid), true
 			}
 			switch event.Type {
 			case watch.Deleted:
 				kapi := e.KubeClient.Api()
 				if err := kapi.CoreV1().Endpoints(opt.Namespace).Delete(svc.Name, &metav1.DeleteOptions{}); err != nil {
-					fmt.Println("failed to delete endpoint", svc.Name, "in", opt.Namespace, ":", err.Error())
-					return false
+					log.WithError(err).
+						WithField("name", svc.Name).
+						WithField("namespace", opt.Namespace).
+						Error("Failed to delete endpoint.")
+					return err, false
 				}
-				return false
+				return nil, false
 			case watch.Added, watch.Modified:
-				if err := e.syncService(svc, blacklistSelector, opt); err != nil {
-					fmt.Println("failed to sync service", svc.Name, "in", opt.Namespace, ":", err.Error())
+				rses, err := e.getDeployReplicaSets(blacklist, opt)
+				if err != nil {
+					log.WithError(err).
+						WithField("namespace", opt.Namespace).
+						WithField("name", svc.Name).
+						WithField("deploys", kubeutil.ObjNames(objconv.FromDeployments(blacklist))).
+						Debug("Failed to get replicasets.")
+					return err, true
+				}
+				if err := e.syncService(svc, rses, opt); err != nil {
+					log.WithError(err).
+						WithField("namespace", opt.Namespace).
+						WithField("name", svc.Name).
+						Error("Failed to sync service after it was updated.")
+					return err, true
 				}
 			}
-			return true
+			return nil, true
 		},
 		OnList: func(obj runtime.Object) error {
 			svcList, ok := obj.(*corev1.ServiceList)
 			if !ok {
 				return except.NewError("a service list was not returned on the watcher: %v", except.ErrInternalError, svcList)
 			}
-			err := e.WatchService.Pods(ctx, blacklistSelector, 3*time.Second, opt, &model.InformEventHandlerFuncs{
-				OnWatch: func(event watch.Event) bool {
+
+			svcListSelectorUnion := labels.Set{}
+			for _, s := range svcList.Items {
+				sel, err := e.getServiceSelectorSet(&s)
+				if err != nil {
+					continue
+				}
+				svcListSelectorUnion = labels.Merge(svcListSelectorUnion, sel)
+			}
+
+			for _, s := range svcList.Items {
+				if err := e.LockdownService.LockdownService(&s, opt); err != nil {
+					return err
+				}
+			}
+
+			err := e.WatchService.Pods(ctx, svcListSelectorUnion.AsSelectorPreValidated(), 3*time.Second, opt, &model.InformEventHandlerFuncs{
+				OnWatch: func(event watch.Event) (error, bool) {
 
 					switch event.Type {
 					case watch.Modified, watch.Added, watch.Deleted:
+						rses, err := e.getDeployReplicaSets(blacklist, opt)
+						if err != nil {
+							log.WithError(err).
+								WithField("namespace", opt.Namespace).
+								WithField("deploys", kubeutil.ObjNames(objconv.FromDeployments(blacklist))).
+								WithField("pod", event.Object.(metav1.Object).GetName()).
+								Debug("Failed to find replicasets for deploys after pod was updated")
+							return err, true
+						}
 						for _, s := range svcList.Items {
-							if err := e.syncService(&s, blacklistSelector, opt); err != nil {
-								fmt.Println("failed to sync service", s.Name, "in", opt.Namespace, ":", err.Error())
+							if err := e.syncService(&s, rses, opt); err != nil {
+								log.WithError(err).
+									WithField("namespace", opt.Namespace).
+									WithField("service", s.Name).
+									WithField("pod", event.Object.(metav1.Object).GetName()).
+									Error("Failed to sync service after pod was updated.")
+								return err, true
 							}
 						}
 					}
-					return true
+					return nil, true
 				},
 				OnList: func(obj runtime.Object) error {
+					rses, err := e.getDeployReplicaSets(blacklist, opt)
+					if err != nil {
+						return err
+					}
 					for _, s := range svcList.Items {
-						if err := e.syncService(&s, blacklistSelector, opt); err != nil {
+						if err := e.syncService(&s, rses, opt); err != nil {
 							return err
 						}
 					}
@@ -103,11 +172,6 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 				return err
 			}
 
-			for _, s := range svcList.Items {
-				if err := e.LockdownService.LockdownService(&s, opt); err != nil {
-					return err
-				}
-			}
 			return nil
 		},
 	})
@@ -117,8 +181,8 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 
 	return nil
 }
-func (e *endpointsControllerService) syncService(svc *corev1.Service, blackList labels.Selector, opt kconfig.Opt) error {
-	svcSet, err := e.getServiceSelector(svc)
+func (e *endpointsControllerService) syncService(svc *corev1.Service, blackListedRs []appsv1.ReplicaSet, opt kconfig.Opt) error {
+	svcSet, err := e.getServiceSelectorSet(svc)
 	if err != nil {
 		return err
 	}
@@ -135,55 +199,91 @@ func (e *endpointsControllerService) syncService(svc *corev1.Service, blackList 
 		return err
 	}
 
+	subsets := make([]corev1.EndpointSubset, 0)
+
+	rsObjs := objconv.FromReplicaSets(blackListedRs)
+
 	for _, p := range pods {
-		if blackList.Matches(labels.Set(p.Labels)) {
+		if kubeutil.IsOwned(&p, rsObjs...) {
 			continue
 		}
 
 		ea := kubeutil.PodToEndpointAddress(&p)
+
+		if ea.IP == "" {
+			continue
+		}
+
 		addr := []corev1.EndpointAddress{*ea}
 
 		for _, sp := range svc.Spec.Ports {
 			port, err := kubeutil.FindPort(&p, &sp)
 			if err != nil {
-				fmt.Println("Failed to find targeted service port for pod", p.Name, "and service", svc.Name, "in", opt.Namespace, ":", err.Error())
+				log.WithError(err).
+					WithField("namespace", opt.Namespace).
+					WithField("service", svc.Name).
+					WithField("pod", p.Name).
+					Debug("Failed to find targeted service port for pod")
 				continue
 			}
 
 			epp := kubeutil.EndpointPortFromServicePort(&sp, port)
 
-			ep.Subsets = append(ep.Subsets, corev1.EndpointSubset{
-				Addresses: addr,
-				Ports:     []corev1.EndpointPort{*epp},
-			})
+			ss := corev1.EndpointSubset{
+				Ports: []corev1.EndpointPort{*epp},
+			}
+
+			if p.Status.Phase == corev1.PodRunning {
+				ss.Addresses = addr
+			} else {
+				ss.NotReadyAddresses = addr
+			}
+			subsets = append(subsets, ss)
 		}
 	}
 
-	ep.Subsets = kubeutil.RepackSubsets(ep.Subsets)
-
-	if _, err := e.KubeClient.UpdateEndpoints(ep, opt); err != nil {
-		fmt.Println("Failed to update endpoint", svc.Name, "in", opt.Namespace, ":", err.Error())
-		return err
+	if len(subsets) > 0 {
+		ep.Subsets = kubeutil.RepackSubsets(subsets)
+		if _, err := e.KubeClient.SaveEndpoints(ep, opt); err != nil {
+			log.WithError(err).
+				WithField("endpoint", svc.Name).
+				WithField("namespace", opt.Namespace).
+				Error("Failed to update endpoint")
+			return err
+		}
+		log.WithField("endpoint", svc.Name).
+			WithField("namespace", opt.Namespace).
+			WithField("addresses", kubeutil.Addresses(ep.Subsets)).
+			Trace("Updated endpoint")
+	} else {
+		log.WithField("endpoint", svc.Name).
+			WithField("namespace", opt.Namespace).
+			Debug("No valid pods found. No update made to endpoint.")
 	}
 
 	return nil
 }
 
-func (e *endpointsControllerService) watchFilter(blacklist labels.Set, opt kconfig.Opt) kube.Filter {
+func (e *endpointsControllerService) watchFilter(targets []appsv1.Deployment, opt kconfig.Opt) kengine.Filter {
 	return func(object metav1.Object) bool {
 		if v, ok := object.(*corev1.Service); ok {
-			sel, err := e.getServiceSelector(v)
+			selectorSet, err := e.getServiceSelectorSet(v)
 			if err != nil {
 				return false
 			}
-			filter := object.GetNamespace() == opt.Namespace && v.Spec.Selector != nil && labels.SelectorFromSet(sel).Matches(labels.Set(blacklist))
-			return filter
+			selector := selectorSet.AsSelectorPreValidated()
+
+			for _, t := range targets {
+				if object.GetNamespace() == opt.Namespace && selector.Matches(labels.Set(t.Spec.Template.Labels)) {
+					return true
+				}
+			}
 		}
 		return false
 	}
 }
 
-func (e *endpointsControllerService) getServiceSelector(svc *corev1.Service) (labels.Set, error) {
+func (e *endpointsControllerService) getServiceSelectorSet(svc *corev1.Service) (labels.Set, error) {
 	sel := svc.Spec.Selector
 	if sel == nil {
 		ld, err := e.LockdownService.GetLockDown(svc)
@@ -193,4 +293,15 @@ func (e *endpointsControllerService) getServiceSelector(svc *corev1.Service) (la
 		sel = ld.DeletedSelector
 	}
 	return sel, nil
+}
+
+func (e *endpointsControllerService) getDeployReplicaSets(deploys []appsv1.Deployment, opt kconfig.Opt) ([]appsv1.ReplicaSet, error) {
+	rses, err := e.KubeClient.Api().AppsV1().ReplicaSets(opt.Namespace).List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	filteredSets := kubeutil.FilterObject(kubeutil.OwnerFilter(objconv.FromDeployments(deploys)...), objconv.FromReplicaSets(rses.Items)...)
+
+	return objconv.ToReplicaSetsUnsafe(filteredSets), nil
 }

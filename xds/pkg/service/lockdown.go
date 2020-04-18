@@ -9,6 +9,7 @@ import (
 	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
+	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,7 +57,7 @@ func (l *lockdownService) LockdownService(svc *corev1.Service, opt kconfig.Opt) 
 		return nil
 	}
 	if svc.Spec.Selector == nil {
-		return except.NewError("service %s's endpoints are already github.com/kage-cloud/kage/core/kubeanaged by something else", except.ErrConflict, svc.Name)
+		return except.NewError("service %s's endpoints are already managed by something else", except.ErrConflict, svc.Name)
 	}
 
 	lockdown := &model.Lockdown{DeletedSelector: svc.Spec.Selector}
@@ -68,6 +69,8 @@ func (l *lockdownService) LockdownService(svc *corev1.Service, opt kconfig.Opt) 
 	if _, err := l.KubeClient.UpdateService(svc, opt); err != nil {
 		return err
 	}
+
+	log.WithField("name", svc.Name).WithField("namespace", svc.Namespace).Debug("Locked down service.")
 
 	return nil
 }

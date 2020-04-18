@@ -11,6 +11,16 @@ import (
 	"sort"
 )
 
+func Addresses(subsets []v1.EndpointSubset) []string {
+	out := make([]string, 0)
+	for _, s := range subsets {
+		for _, a := range s.Addresses {
+			out = append(out, a.IP)
+		}
+	}
+	return out
+}
+
 // This was copied from https://github.com/kubernetes/kubernetes/blob/master/pkg/api/v1/endpoints/util.go#L35. The
 // Kubernetes library at this time is not very easy to depend upon otherwise I would have done that since it's a lot
 // safer and easier.

@@ -56,3 +56,10 @@ func TargetNameFromLabels(l map[string]string) (string, error) {
 	}
 	return "", except.NewError("Missing the %s label", except.ErrInvalid, consts.LabelKeyTarget)
 }
+
+func CanaryNameFromLabels(l map[string]string) (string, error) {
+	if v, ok := l[consts.LabelKeyCanary]; ok {
+		return v, nil
+	}
+	return "", except.NewError("Missing the %s label", except.ErrInvalid, consts.LabelKeyCanary)
+}

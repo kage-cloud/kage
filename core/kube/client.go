@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,12 +21,12 @@ import (
 )
 
 type Client interface {
-	InformAndListServices(filter Filter) ([]corev1.Service, <-chan watch.Event)
-	InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-chan watch.Event)
-	InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event)
-	InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event)
-	InformAndListDeploys(filter Filter) ([]appsv1.Deployment, <-chan watch.Event)
-	InformDeploy(filter Filter) <-chan watch.Event
+	InformAndListServices(filter kengine.Filter) ([]corev1.Service, <-chan watch.Event)
+	InformAndListEndpoints(filter kengine.Filter) ([]corev1.Endpoints, <-chan watch.Event)
+	InformAndListPod(filter kengine.Filter) ([]corev1.Pod, <-chan watch.Event)
+	InformAndListConfigMap(filter kengine.Filter) ([]corev1.ConfigMap, <-chan watch.Event)
+	InformAndListDeploys(filter kengine.Filter) ([]appsv1.Deployment, <-chan watch.Event)
+	InformDeploy(filter kengine.Filter) <-chan watch.Event
 	WatchDeploy(lo metav1.ListOptions, opt kconfig.Opt) (watch.Interface, error)
 	WaitTillDeployReady(name string, timeout time.Duration, opt kconfig.Opt) error
 	GetConfigMap(name string, opt kconfig.Opt) (*corev1.ConfigMap, error)
@@ -36,6 +37,7 @@ type Client interface {
 	DeleteConfigMap(name string, opt kconfig.Opt) error
 	UpsertConfigMap(cm *corev1.ConfigMap, opt kconfig.Opt) (*corev1.ConfigMap, error)
 	UpsertDeploy(dep *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
+	SaveEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error)
 	UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error)
 	UpdateEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error)
 	UpdateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
@@ -85,11 +87,24 @@ type client struct {
 	mapLock                    sync.RWMutex
 }
 
+func (c *client) SaveEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error) {
+	ep.ResourceVersion = ""
+	out, err := c.Api().CoreV1().Endpoints(opt.Namespace).Create(ep)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			return c.UpdateEndpoints(ep, opt)
+		} else {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 func (c *client) ApiConfig() kconfig.Config {
 	return c.Config
 }
 
-func (c *client) InformAndListDeploys(filter Filter) ([]appsv1.Deployment, <-chan watch.Event) {
+func (c *client) InformAndListDeploys(filter kengine.Filter) ([]appsv1.Deployment, <-chan watch.Event) {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
 		object, b = obj.(*appsv1.Deployment)
 		return
@@ -116,7 +131,7 @@ func (c *client) UpdateEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1
 	return c.Api().CoreV1().Endpoints(opt.Namespace).Update(ep)
 }
 
-func (c *client) InformAndListEndpoints(filter Filter) ([]corev1.Endpoints, <-chan watch.Event) {
+func (c *client) InformAndListEndpoints(filter kengine.Filter) ([]corev1.Endpoints, <-chan watch.Event) {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
 		object, b = obj.(*corev1.Endpoints)
 		return
@@ -159,7 +174,7 @@ func (c *client) CreateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*apps
 	return c.Api().AppsV1().Deployments(opt.Namespace).Create(deploy)
 }
 
-func (c *client) InformAndListConfigMap(filter Filter) ([]corev1.ConfigMap, <-chan watch.Event) {
+func (c *client) InformAndListConfigMap(filter kengine.Filter) ([]corev1.ConfigMap, <-chan watch.Event) {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
 		object, b = obj.(*corev1.ConfigMap)
 		return
@@ -186,7 +201,7 @@ func (c *client) UpdatePod(pod *corev1.Pod, opt kconfig.Opt) (*corev1.Pod, error
 	return c.Api().CoreV1().Pods(opt.Namespace).Update(pod)
 }
 
-func (c *client) InformAndListPod(filter Filter) ([]corev1.Pod, <-chan watch.Event) {
+func (c *client) InformAndListPod(filter kengine.Filter) ([]corev1.Pod, <-chan watch.Event) {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
 		object, b = obj.(*corev1.Pod)
 		return
@@ -224,7 +239,7 @@ func (c *client) ListEndpoints(selector labels.Selector, opt kconfig.Opt) ([]cor
 	return items.Items, nil
 }
 
-func (c *client) InformAndListServices(filter Filter) ([]corev1.Service, <-chan watch.Event) {
+func (c *client) InformAndListServices(filter kengine.Filter) ([]corev1.Service, <-chan watch.Event) {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
 		object, b = obj.(*corev1.Service)
 		return
@@ -243,7 +258,7 @@ func (c *client) InformAndListServices(filter Filter) ([]corev1.Service, <-chan 
 	return result, ch
 }
 
-func (c *client) InformDeploy(filter Filter) <-chan watch.Event {
+func (c *client) InformDeploy(filter kengine.Filter) <-chan watch.Event {
 	ch, handler := c.handlerFactory(filter, func(obj interface{}) (object runtime.Object, b bool) {
 		object, b = obj.(*appsv1.Deployment)
 		return
@@ -403,7 +418,7 @@ func (c *client) getLatestCondition(dep *appsv1.Deployment) *appsv1.DeploymentCo
 	return nil
 }
 
-func (c *client) handlerFactory(filter Filter, caster func(obj interface{}) (runtime.Object, bool)) (chan watch.Event, cache.FilteringResourceEventHandler) {
+func (c *client) handlerFactory(filter kengine.Filter, caster func(obj interface{}) (runtime.Object, bool)) (chan watch.Event, cache.FilteringResourceEventHandler) {
 	buffer := 100
 	ch := make(chan watch.Event, buffer)
 	filterHandler := cache.FilteringResourceEventHandler{

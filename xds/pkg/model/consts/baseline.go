@@ -28,7 +28,7 @@ static_resources:
             port_value: {{.XdsPort}}
       http2_protocol_options: {}
       name: xds
-      type: STATIC
+      type: LOGICAL_DNS
     - name: {{.CanaryClusterName}}
       connect_timeout: 1s
       type: EDS

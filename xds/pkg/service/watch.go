@@ -4,8 +4,10 @@ import (
 	"context"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/xds/pkg/model"
+	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,7 +22,7 @@ const WatchServiceKey = "WatchService"
 type WatchService interface {
 	Pods(ctx context.Context, selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 
-	Services(ctx context.Context, filter kube.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
+	Services(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 	DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
 	DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
 	Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
@@ -53,7 +55,7 @@ func (w *watchService) Deployment(ctx context.Context, deploy *appsv1.Deployment
 	return nil
 }
 
-func (w *watchService) Services(ctx context.Context, filter kube.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
+func (w *watchService) Services(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
 	svcs, wi := w.KubeClient.InformAndListServices(filter)
 
 	svcList := &corev1.ServiceList{
@@ -129,23 +131,31 @@ func (w *watchService) DeploymentPods(ctx context.Context, deploy *appsv1.Deploy
 
 func (w *watchService) handleItemLoop(ctx context.Context, queue workqueue.Interface, handlers ...model.InformEventHandler) {
 	shutdown := false
-	loopTimer := time.NewTimer(time.Second)
+	loopTicker := time.NewTicker(time.Second)
 	for !shutdown {
 		select {
-		case <-loopTimer.C:
+		case <-loopTicker.C:
 			var item interface{}
 			item, shutdown = queue.Get()
+			var isDone bool
 			if v, ok := item.(watch.Event); ok {
 				for _, h := range handlers {
-					if !h.OnWatchEvent(v) {
-						return
+					err, shouldContinue := h.OnWatchEvent(v)
+					if !shouldContinue {
+						shutdown = true
 					}
+					isDone = isDone && err == nil
 				}
+			}
+			if isDone {
+				queue.Done(item)
 			}
 		case <-ctx.Done():
 			shutdown = true
 		}
 	}
+
+	log.Debug("Exiting item handler loop.")
 }
 
 func (w *watchService) createQueue(ctx context.Context, batchTime time.Duration, watchChan <-chan watch.Event, handlers ...model.InformEventHandler) {
@@ -155,13 +165,12 @@ func (w *watchService) createQueue(ctx context.Context, batchTime time.Duration,
 }
 
 func (w *watchService) queueItemLoop(ctx context.Context, batchTime time.Duration, queue workqueue.RateLimitingInterface, watchChan <-chan watch.Event) {
-	loopTimer := time.NewTimer(time.Second)
-	for {
+	for !queue.ShuttingDown() {
 		select {
-		case <-loopTimer.C:
-			e := <-watchChan
+		case e := <-watchChan:
 			queue.AddAfter(e, batchTime)
 		case <-ctx.Done():
+			queue.ShutDown()
 			return
 		}
 	}

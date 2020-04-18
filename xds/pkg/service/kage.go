@@ -86,7 +86,7 @@ func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 	}
 
 	err = k.WatchService.Deployment(ctx, canary.CanaryDeploy, 5*time.Second, &model.InformEventHandlerFuncs{
-		OnWatch: func(event watch.Event) bool {
+		OnWatch: func(event watch.Event) (error, bool) {
 			switch event.Type {
 			case watch.Deleted:
 				log.WithField("name", canary.CanaryDeploy.Name).
@@ -103,9 +103,9 @@ func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 					WithField("namespace", opt.Namespace).
 					WithField("canary", canary.Name).
 					Info("Successfully deleted mesh after canary was deleted.")
-				return false
+				return err, false
 			}
-			return true
+			return nil, true
 		},
 	})
 	if err != nil {

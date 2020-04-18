@@ -10,11 +10,11 @@ type InformEventHandlerFuncs struct {
 	OnList  OnListEventFunc
 }
 
-func (i *InformEventHandlerFuncs) OnWatchEvent(event watch.Event) bool {
+func (i *InformEventHandlerFuncs) OnWatchEvent(event watch.Event) (error, bool) {
 	if i.OnWatch != nil {
 		return i.OnWatch(event)
 	} else {
-		return false
+		return nil, false
 	}
 }
 
@@ -26,10 +26,10 @@ func (i *InformEventHandlerFuncs) OnListEvent(obj runtime.Object) error {
 }
 
 type InformEventHandler interface {
-	OnWatchEvent(event watch.Event) bool
+	OnWatchEvent(event watch.Event) (error, bool)
 	OnListEvent(obj runtime.Object) error
 }
 
-type OnWatchEventFunc func(event watch.Event) bool
+type OnWatchEventFunc func(event watch.Event) (error, bool)
 
 type OnListEventFunc func(obj runtime.Object) error
