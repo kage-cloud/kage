@@ -1,9 +1,11 @@
 package kubeutil
 
 import (
+	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/core/kube/kengine"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 func IsOwned(owned metav1.Object, owners ...metav1.Object) bool {
@@ -20,6 +22,12 @@ func IsOwned(owned metav1.Object, owners ...metav1.Object) bool {
 func OwnerFilter(owners ...metav1.Object) kengine.Filter {
 	return func(object metav1.Object) bool {
 		return IsOwned(object, owners...)
+	}
+}
+
+func SelectedObjectFilter(selector labels.Selector, opt kconfig.Opt) kengine.Filter {
+	return func(object metav1.Object) bool {
+		return object.GetNamespace() == opt.Namespace && selector.Matches(labels.Set(object.GetLabels()))
 	}
 }
 

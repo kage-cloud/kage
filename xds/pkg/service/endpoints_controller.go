@@ -27,10 +27,11 @@ type EndpointsControllerService interface {
 }
 
 type endpointsControllerService struct {
-	LockdownService LockdownService `inject:"LockdownService"`
-	WatchService    WatchService    `inject:"WatchService"`
-	XdsService      XdsService      `inject:"XdsService"`
-	KubeClient      kube.Client     `inject:"KubeClient"`
+	LockdownService   LockdownService   `inject:"LockdownService"`
+	WatchService      WatchService      `inject:"WatchService"`
+	XdsService        XdsService        `inject:"XdsService"`
+	KubeReaderService KubeReaderService `inject:"KubeReaderService"`
+	KubeClient        kube.Client       `inject:"KubeClient"`
 }
 
 func (e *endpointsControllerService) Stop(blacklist []appsv1.Deployment, opt kconfig.Opt) error {
@@ -87,7 +88,7 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 				}
 				return nil, false
 			case watch.Added, watch.Modified:
-				rses, err := e.getDeployReplicaSets(blacklist, opt)
+				rses, err := e.KubeReaderService.GetDeployReplicaSets(blacklist, opt)
 				if err != nil {
 					log.WithError(err).
 						WithField("namespace", opt.Namespace).
@@ -127,12 +128,14 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 				}
 			}
 
-			err := e.WatchService.Pods(ctx, svcListSelectorUnion.AsSelectorPreValidated(), 3*time.Second, opt, &model.InformEventHandlerFuncs{
+			filter := kubeutil.SelectedObjectFilter(svcListSelectorUnion.AsSelectorPreValidated(), opt)
+
+			err := e.WatchService.Pods(ctx, filter, 3*time.Second, opt, &model.InformEventHandlerFuncs{
 				OnWatch: func(event watch.Event) (error, bool) {
 
 					switch event.Type {
 					case watch.Modified, watch.Added, watch.Deleted:
-						rses, err := e.getDeployReplicaSets(blacklist, opt)
+						rses, err := e.KubeReaderService.GetDeployReplicaSets(blacklist, opt)
 						if err != nil {
 							log.WithError(err).
 								WithField("namespace", opt.Namespace).
@@ -155,7 +158,7 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 					return nil, true
 				},
 				OnList: func(obj runtime.Object) error {
-					rses, err := e.getDeployReplicaSets(blacklist, opt)
+					rses, err := e.KubeReaderService.GetDeployReplicaSets(blacklist, opt)
 					if err != nil {
 						return err
 					}
@@ -293,15 +296,4 @@ func (e *endpointsControllerService) getServiceSelectorSet(svc *corev1.Service) 
 		sel = ld.DeletedSelector
 	}
 	return sel, nil
-}
-
-func (e *endpointsControllerService) getDeployReplicaSets(deploys []appsv1.Deployment, opt kconfig.Opt) ([]appsv1.ReplicaSet, error) {
-	rses, err := e.KubeClient.Api().AppsV1().ReplicaSets(opt.Namespace).List(metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	filteredSets := kubeutil.FilterObject(kubeutil.OwnerFilter(objconv.FromDeployments(deploys)...), objconv.FromReplicaSets(rses.Items)...)
-
-	return objconv.ToReplicaSetsUnsafe(filteredSets), nil
 }

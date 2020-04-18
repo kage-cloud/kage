@@ -10,6 +10,7 @@ type Package struct {
 func (p *Package) Bindings() []axon.Binding {
 	return []axon.Binding{
 		axon.Bind(CanaryControllerKey).To().StructPtr(new(canaryController)),
-		axon.Bind(ControllersKey).To().Keys(CanaryControllerKey),
+		axon.Bind(AdminControllerKey).To().StructPtr(new(adminController)),
+		axon.Bind(ControllersKey).To().Keys(CanaryControllerKey, AdminControllerKey),
 	}
 }

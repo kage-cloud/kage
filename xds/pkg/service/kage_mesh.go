@@ -229,7 +229,7 @@ func (k *kageMeshService) fetchDeployFromCanary(canaryDeployName string, opt kco
 	}
 
 	if len(kageMeshDeployLists.Items) <= 0 {
-		return nil, except.NewError("Canary %s github.com/kage-cloud/kage/core/kubesh.", except.ErrNotFound, canaryDeployName)
+		return nil, except.NewError("Canary %s could not be found.", except.ErrNotFound, canaryDeployName)
 	}
 
 	return &kageMeshDeployLists.Items[0], nil

@@ -172,14 +172,16 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 		return err
 	}
 
-	if err := s.Cache.SetSnapshot(state.NodeId, cache.NewSnapshot(
+	snapshot := cache.NewSnapshot(
 		compositeState.UuidVersion,
 		endpointResources,
 		nil,
 		routeResources,
 		listenerResources,
 		nil,
-	)); err != nil {
+	)
+
+	if err := s.Cache.SetSnapshot(state.NodeId, snapshot); err != nil {
 		log.WithField("node_id", state.NodeId).WithError(err).Debug("Failed to save envoy state in the cache.")
 		_ = handler.Revert()
 		return err

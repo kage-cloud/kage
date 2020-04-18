@@ -20,7 +20,7 @@ import (
 const WatchServiceKey = "WatchService"
 
 type WatchService interface {
-	Pods(ctx context.Context, selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
+	Pods(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 
 	Services(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error
 	DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...model.InformEventHandler) error
@@ -73,10 +73,8 @@ func (w *watchService) Services(ctx context.Context, filter kengine.Filter, batc
 	return nil
 }
 
-func (w *watchService) Pods(ctx context.Context, selector labels.Selector, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
-	pods, wi := w.KubeClient.InformAndListPod(func(object metav1.Object) bool {
-		return object.GetNamespace() == opt.Namespace && selector.Matches(labels.Set(object.GetLabels()))
-	})
+func (w *watchService) Pods(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...model.InformEventHandler) error {
+	pods, wi := w.KubeClient.InformAndListPod(filter)
 	podList := &corev1.PodList{
 		Items: pods,
 	}
@@ -123,10 +121,10 @@ func (w *watchService) DeploymentPods(ctx context.Context, deploy *appsv1.Deploy
 		return err
 	}
 
-	selector.String()
 	ns := kubeutil.DeploymentPodNamespace(deploy)
 
-	return w.Pods(ctx, selector, batchTime, kconfig.Opt{Namespace: ns}, eventHandlers...)
+	opt := kconfig.Opt{Namespace: ns}
+	return w.Pods(ctx, kubeutil.SelectedObjectFilter(selector, opt), batchTime, opt, eventHandlers...)
 }
 
 func (w *watchService) handleItemLoop(ctx context.Context, queue workqueue.Interface, handlers ...model.InformEventHandler) {

@@ -26,6 +26,7 @@ type xdsEventHandler struct {
 	StoreClient     snap.StoreClient        `inject:"StoreClient"`
 }
 
+// TODO: Needs to include the services that talk to this pod.
 func (x *xdsEventHandler) DeployPodsEventHandler(nodeId string) model.InformEventHandler {
 	return &model.InformEventHandlerFuncs{
 		OnWatch: x.onWatch(nodeId),
@@ -37,6 +38,9 @@ func (x *xdsEventHandler) onList(nodeId string) model.OnListEventFunc {
 	return func(obj runtime.Object) error {
 		if v, ok := obj.(*corev1.PodList); ok {
 			for _, p := range v.Items {
+				if util.IsKageMesh(p.Labels) {
+					continue
+				}
 				if err := x.storePod(nodeId, &p); err != nil {
 					return err
 				}
@@ -49,6 +53,9 @@ func (x *xdsEventHandler) onList(nodeId string) model.OnListEventFunc {
 func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
 	return func(event watch.Event) (error, bool) {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
+			if util.IsKageMesh(pod.Labels) {
+				return nil, true
+			}
 			switch event.Type {
 			case watch.Error, watch.Deleted:
 				if err := x.removePod(nodeId, pod); err != nil {
@@ -103,6 +110,10 @@ func (x *xdsEventHandler) removePod(nodeId string, pod *corev1.Pod) error {
 	}
 
 	if changed {
+		log.WithField("node_id", nodeId).
+			WithField("pod", pod.Name).
+			WithField("namespace", pod.Namespace).
+			Debug("Removing pod from control plane.")
 		err = x.StoreClient.Set(state)
 		if err != nil {
 			return err
@@ -152,6 +163,10 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 	}
 
 	if changed {
+		log.WithField("node_id", nodeId).
+			WithField("pod", pod.Name).
+			WithField("namespace", pod.Namespace).
+			Debug("Adding pod to control plane.")
 		err = x.StoreClient.Set(state)
 		if err != nil {
 			return err

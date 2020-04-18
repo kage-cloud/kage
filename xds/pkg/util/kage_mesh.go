@@ -31,3 +31,10 @@ func MeshConfigAnnotation(annotations map[string]string) (*model.MeshConfigAnnot
 	}
 	return nil, except.NewError("Annotation %s could not be found", except.ErrNotFound, consts.AnnotationKageMesh)
 }
+
+func IsKageMesh(l map[string]string) bool {
+	if v, ok := l[consts.LabelKeyResource]; ok {
+		return v == consts.LabelValueResourceKageMesh
+	}
+	return false
+}
