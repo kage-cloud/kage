@@ -3,6 +3,7 @@ package kengine
 import (
 	"context"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"k8s.io/client-go/util/workqueue"
 	"sync"
 )
@@ -17,7 +18,7 @@ func NewDistributedQueue() DistributedQueue {
 
 // A queue that can distribute its work amongst child queues.
 type DistributedQueue interface {
-	FireAndForget
+	kinformer.FireAndForget
 	workqueue.DelayingInterface
 	AddQueue(queue workqueue.Interface)
 }

@@ -4,9 +4,9 @@ import (
 	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	endpointv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kengine"
-	"github.com/kage-cloud/kage/core/kube/kengine/objconv"
-	"github.com/kage-cloud/kage/core/kube/kubeutil"
+	"github.com/kage-cloud/kage/core/kube/ktypes/objconv"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
@@ -23,7 +23,7 @@ import (
 const XdsEventHandlerKey = "XdsEventHandler"
 
 type XdsEventHandler interface {
-	DeployPodsEventHandler(nodeId string) kengine.InformEventHandler
+	DeployPodsEventHandler(nodeId string) kinformer.InformEventHandler
 }
 
 type xdsEventHandler struct {
@@ -33,14 +33,14 @@ type xdsEventHandler struct {
 	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
 }
 
-func (x *xdsEventHandler) DeployPodsEventHandler(nodeId string) kengine.InformEventHandler {
-	return &kengine.InformEventHandlerFuncs{
+func (x *xdsEventHandler) DeployPodsEventHandler(nodeId string) kinformer.InformEventHandler {
+	return &kinformer.InformEventHandlerFuncs{
 		OnWatch: x.onWatch(nodeId),
 		OnList:  x.onList(nodeId),
 	}
 }
 
-func (x *xdsEventHandler) onList(nodeId string) kengine.OnListEventFunc {
+func (x *xdsEventHandler) onList(nodeId string) kinformer.OnListEventFunc {
 	return func(obj runtime.Object) error {
 		if v, ok := obj.(*corev1.PodList); ok {
 			for _, p := range v.Items {
@@ -56,7 +56,7 @@ func (x *xdsEventHandler) onList(nodeId string) kengine.OnListEventFunc {
 	}
 }
 
-func (x *xdsEventHandler) onWatch(nodeId string) kengine.OnWatchEventFunc {
+func (x *xdsEventHandler) onWatch(nodeId string) kinformer.OnWatchEventFunc {
 	return func(event watch.Event) error {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
 			if util.IsKageMesh(pod.Labels) {
@@ -231,7 +231,7 @@ func (x *xdsEventHandler) getServicesForLabels(set labels.Set, namespace string)
 		return nil, err
 	}
 
-	objs := kubeutil.FilterObject(func(object metav1.Object) bool {
+	objs := kfilter.FilterObject(func(object metav1.Object) bool {
 		if v, ok := object.(*corev1.Service); ok {
 			return labels.SelectorFromSet(v.Spec.Selector).Matches(set)
 		}

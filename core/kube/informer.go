@@ -5,6 +5,7 @@ import (
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,7 +21,7 @@ import (
 type InformerClient interface {
 	Informing(kind ktypes.NamespaceKind) bool
 
-	Inform(ctx context.Context, spec kengine.InformerSpec) error
+	Inform(ctx context.Context, spec kinformer.InformerSpec) error
 
 	// Returns a Kind list so if the kind is a Deploy, an *appsv1.DeploymentList is returned.
 	List(nsKind ktypes.NamespaceKind, selector labels.Selector) (runtime.Object, error)
@@ -164,7 +165,7 @@ func (i *informerClient) Informing(nsKind ktypes.NamespaceKind) bool {
 	return ok
 }
 
-func (i *informerClient) Inform(ctx context.Context, spec kengine.InformerSpec) error {
+func (i *informerClient) Inform(ctx context.Context, spec kinformer.InformerSpec) error {
 	fact := i.lazyGetFactory(spec.NamespaceKind)
 
 	informer, err := i.informerForKind(spec.NamespaceKind.Kind, fact)
@@ -212,7 +213,7 @@ func (i *informerClient) getFactory(nsKind ktypes.NamespaceKind) informers.Share
 	return i.factoriesByNamespace[nsKind.Namespace]
 }
 
-func (i *informerClient) createHandlerQueue(ctx context.Context, spec kengine.InformerSpec) kengine.HandlerQueue {
+func (i *informerClient) createHandlerQueue(ctx context.Context, spec kinformer.InformerSpec) kengine.HandlerQueue {
 	queue := kengine.NewHandlerQueue(spec.Handlers...)
 	queue.Start(ctx)
 	return queue
@@ -239,7 +240,7 @@ func (i *informerClient) informerForKind(kind ktypes.Kind, factory informers.Sha
 	return
 }
 
-func (i *informerClient) handlerFactory(queue workqueue.DelayingInterface, spec kengine.InformerSpec) cache.FilteringResourceEventHandler {
+func (i *informerClient) handlerFactory(queue workqueue.DelayingInterface, spec kinformer.InformerSpec) cache.FilteringResourceEventHandler {
 	return cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			if v, ok := obj.(metav1.Object); ok {

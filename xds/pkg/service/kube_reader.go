@@ -3,9 +3,9 @@ package service
 import (
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kengine/objconv"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
-	"github.com/kage-cloud/kage/core/kube/kubeutil"
+	"github.com/kage-cloud/kage/core/kube/ktypes/objconv"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -204,7 +204,7 @@ func (k *kubeReaderService) GetDeployReplicaSets(deploys []appsv1.Deployment, op
 		return nil, err
 	}
 
-	filteredSets := kubeutil.FilterObject(kubeutil.OwnerFilter(objconv.FromDeployments(deploys)...), objconv.FromReplicaSets(rses.Items)...)
+	filteredSets := kfilter.FilterObject(kfilter.OwnerFilter(objconv.FromDeployments(deploys)...), objconv.FromReplicaSets(rses.Items)...)
 
 	return objconv.ToReplicaSetsUnsafe(filteredSets), nil
 }

@@ -4,9 +4,10 @@ import (
 	"context"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,12 +18,12 @@ import (
 const WatchServiceKey = "WatchService"
 
 type WatchService interface {
-	Pods(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kengine.InformEventHandler) error
+	Pods(ctx context.Context, filter kfilter.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kinformer.InformEventHandler) error
 
-	Services(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kengine.InformEventHandler) error
-	DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kengine.InformEventHandler) error
-	DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kengine.InformEventHandler) error
-	Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kengine.InformEventHandler) error
+	Services(ctx context.Context, filter kfilter.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kinformer.InformEventHandler) error
+	DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kinformer.InformEventHandler) error
+	DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kinformer.InformEventHandler) error
+	Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kinformer.InformEventHandler) error
 }
 
 type watchService struct {
@@ -31,8 +32,8 @@ type watchService struct {
 	KubeReaderService KubeReaderService   `inject:"KubeReaderService"`
 }
 
-func (w *watchService) Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kengine.InformEventHandler) error {
-	spec := kengine.InformerSpec{
+func (w *watchService) Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kinformer.InformEventHandler) error {
+	spec := kinformer.InformerSpec{
 		NamespaceKind: ktypes.NewNamespaceKind(deploy.Namespace, ktypes.KindDeploy),
 		BatchDuration: batchTime,
 		Filter: func(object metav1.Object) bool {
@@ -47,8 +48,8 @@ func (w *watchService) Deployment(ctx context.Context, deploy *appsv1.Deployment
 	return w.InformerClient.Inform(ctx, spec)
 }
 
-func (w *watchService) Services(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kengine.InformEventHandler) error {
-	spec := kengine.InformerSpec{
+func (w *watchService) Services(ctx context.Context, filter kfilter.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kinformer.InformEventHandler) error {
+	spec := kinformer.InformerSpec{
 		NamespaceKind: ktypes.NewNamespaceKind(opt.Namespace, ktypes.KindService),
 		BatchDuration: batchTime,
 		Filter:        filter,
@@ -58,8 +59,8 @@ func (w *watchService) Services(ctx context.Context, filter kengine.Filter, batc
 	return w.InformerClient.Inform(ctx, spec)
 }
 
-func (w *watchService) Pods(ctx context.Context, filter kengine.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kengine.InformEventHandler) error {
-	spec := kengine.InformerSpec{
+func (w *watchService) Pods(ctx context.Context, filter kfilter.Filter, batchTime time.Duration, opt kconfig.Opt, eventHandlers ...kinformer.InformEventHandler) error {
+	spec := kinformer.InformerSpec{
 		NamespaceKind: ktypes.NewNamespaceKind(opt.Namespace, ktypes.KindPod),
 		BatchDuration: batchTime,
 		Filter:        filter,
@@ -69,10 +70,10 @@ func (w *watchService) Pods(ctx context.Context, filter kengine.Filter, batchTim
 	return w.InformerClient.Inform(ctx, spec)
 }
 
-func (w *watchService) DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kengine.InformEventHandler) error {
+func (w *watchService) DeploymentServices(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kinformer.InformEventHandler) error {
 	ns := kubeutil.DeploymentPodNamespace(deploy)
 
-	spec := kengine.InformerSpec{
+	spec := kinformer.InformerSpec{
 		NamespaceKind: ktypes.NewNamespaceKind(ns, ktypes.KindService),
 		BatchDuration: batchTime,
 		Filter: func(object metav1.Object) bool {
@@ -88,7 +89,7 @@ func (w *watchService) DeploymentServices(ctx context.Context, deploy *appsv1.De
 	return w.InformerClient.Inform(ctx, spec)
 }
 
-func (w *watchService) DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kengine.InformEventHandler) error {
+func (w *watchService) DeploymentPods(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kinformer.InformEventHandler) error {
 	selector, err := metav1.LabelSelectorAsSelector(deploy.Spec.Selector)
 	if err != nil {
 		return err
@@ -97,5 +98,5 @@ func (w *watchService) DeploymentPods(ctx context.Context, deploy *appsv1.Deploy
 	ns := kubeutil.DeploymentPodNamespace(deploy)
 
 	opt := kconfig.Opt{Namespace: ns}
-	return w.Pods(ctx, kubeutil.SelectedObjectInNamespaceFilter(selector, opt), batchTime, opt, eventHandlers...)
+	return w.Pods(ctx, kfilter.SelectedObjectInNamespaceFilter(selector, opt), batchTime, opt, eventHandlers...)
 }

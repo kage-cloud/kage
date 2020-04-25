@@ -1,8 +1,9 @@
-package kengine
+package kinformer
 
 import (
 	"context"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"time"
@@ -12,13 +13,17 @@ type FireAndForget interface {
 	Start(ctx context.Context)
 }
 
+func RemoveInformerIndex(s []InformEventHandler, index int) []InformEventHandler {
+	return append(s[:index], s[index+1:]...)
+}
+
 type InformerSpec struct {
 	// The namespace and Kind that the informer watches.
 	NamespaceKind ktypes.NamespaceKind
 
 	BatchDuration time.Duration
 
-	Filter Filter
+	Filter kfilter.Filter
 
 	Handlers []InformEventHandler
 }

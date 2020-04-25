@@ -2,11 +2,12 @@ package kengine
 
 import (
 	"context"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/util/workqueue"
 )
 
-func NewHandlerQueue(handlers ...InformEventHandler) HandlerQueue {
+func NewHandlerQueue(handlers ...kinformer.InformEventHandler) HandlerQueue {
 	return &handlerQueue{
 		RateLimitingInterface: workqueue.NewRateLimitingQueue(workqueue.DefaultItemBasedRateLimiter()),
 		Handlers:              handlers,
@@ -14,13 +15,13 @@ func NewHandlerQueue(handlers ...InformEventHandler) HandlerQueue {
 }
 
 type HandlerQueue interface {
-	FireAndForget
+	kinformer.FireAndForget
 	workqueue.RateLimitingInterface
 }
 
 type handlerQueue struct {
 	workqueue.RateLimitingInterface
-	Handlers []InformEventHandler
+	Handlers []kinformer.InformEventHandler
 }
 
 func (h *handlerQueue) Start(ctx context.Context) {

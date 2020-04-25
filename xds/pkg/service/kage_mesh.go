@@ -4,7 +4,7 @@ import (
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kengine"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
@@ -146,7 +146,7 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
-	err = k.WatchService.Deployment(spec.Ctx, kageMeshDeploy, 5*time.Second, &kengine.InformEventHandlerFuncs{
+	err = k.WatchService.Deployment(spec.Ctx, kageMeshDeploy, 5*time.Second, &kinformer.InformEventHandlerFuncs{
 		OnWatch: func(event watch.Event) error {
 			if event.Type == watch.Deleted {
 				log.WithField("node_id", meshConfig.NodeId).

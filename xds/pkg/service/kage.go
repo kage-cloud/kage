@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"github.com/eddieowens/axon"
-	"github.com/kage-cloud/kage/core/kube/kengine"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"github.com/kage-cloud/kage/core/synchelpers"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	log "github.com/sirupsen/logrus"
@@ -85,7 +85,7 @@ func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 		return nil, err
 	}
 
-	err = k.WatchService.Deployment(ctx, canary.CanaryDeploy, 5*time.Second, &kengine.InformEventHandlerFuncs{
+	err = k.WatchService.Deployment(ctx, canary.CanaryDeploy, 5*time.Second, &kinformer.InformEventHandlerFuncs{
 		OnWatch: func(event watch.Event) error {
 			switch event.Type {
 			case watch.Deleted:

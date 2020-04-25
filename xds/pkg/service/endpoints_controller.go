@@ -5,9 +5,10 @@ import (
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kengine"
-	"github.com/kage-cloud/kage/core/kube/kengine/objconv"
+	"github.com/kage-cloud/kage/core/kube/ktypes/objconv"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
+	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -69,7 +70,7 @@ func (e *endpointsControllerService) Stop(blacklist []appsv1.Deployment, opt kco
 }
 
 func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error {
-	err := e.WatchService.Services(ctx, e.watchFilter(blacklist, opt), time.Second, opt, &kengine.InformEventHandlerFuncs{
+	err := e.WatchService.Services(ctx, e.watchFilter(blacklist, opt), time.Second, opt, &kinformer.InformEventHandlerFuncs{
 		OnWatch: func(event watch.Event) error {
 			svc, ok := event.Object.(*corev1.Service)
 			if !ok {
@@ -126,9 +127,9 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 				}
 			}
 
-			filter := kubeutil.SelectedObjectInNamespaceFilter(svcListSelectorUnion.AsSelectorPreValidated(), opt)
+			filter := kfilter.SelectedObjectInNamespaceFilter(svcListSelectorUnion.AsSelectorPreValidated(), opt)
 
-			err := e.WatchService.Pods(ctx, filter, 3*time.Second, opt, &kengine.InformEventHandlerFuncs{
+			err := e.WatchService.Pods(ctx, filter, 3*time.Second, opt, &kinformer.InformEventHandlerFuncs{
 				OnWatch: func(event watch.Event) error {
 
 					switch event.Type {
@@ -265,7 +266,7 @@ func (e *endpointsControllerService) syncService(svc *corev1.Service, blackListe
 	return nil
 }
 
-func (e *endpointsControllerService) watchFilter(targets []appsv1.Deployment, opt kconfig.Opt) kengine.Filter {
+func (e *endpointsControllerService) watchFilter(targets []appsv1.Deployment, opt kconfig.Opt) kfilter.Filter {
 	return func(object metav1.Object) bool {
 		if v, ok := object.(*corev1.Service); ok {
 			selectorSet, err := e.getServiceSelectorSet(v)
