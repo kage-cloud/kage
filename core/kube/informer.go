@@ -179,6 +179,8 @@ func (i *informerClient) Inform(ctx context.Context, spec kinformer.InformerSpec
 
 	informer.AddEventHandler(i.handlerFactory(queue, spec))
 
+	i.runInformer(informer)
+
 	i.waitForSync(informer)
 
 	obj, err := i.List(spec.NamespaceKind, labels.Everything())
@@ -281,4 +283,12 @@ func (i *informerClient) waitForSync(informer cache.SharedIndexInformer) {
 	cache.WaitForCacheSync(make(chan struct{}), func() bool {
 		return informer.HasSynced()
 	})
+}
+
+func (i *informerClient) runInformer(informer cache.SharedIndexInformer) {
+	if !informer.HasSynced() {
+		go func() {
+			informer.Run(make(chan struct{}))
+		}()
+	}
 }
