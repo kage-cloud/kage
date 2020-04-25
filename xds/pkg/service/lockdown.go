@@ -58,7 +58,10 @@ func (l *lockdownService) LockdownService(svc *corev1.Service, opt kconfig.Opt) 
 		return nil
 	}
 	if svc.Spec.Selector == nil {
-		return except.NewError("service %s's endpoints are already managed by something else", except.ErrConflict, svc.Name)
+		log.WithField("service", svc.Name).
+			WithField("namespace", svc.Namespace).
+			Debug("Service has no selector. Skipping lockdown")
+		return nil
 	}
 
 	lockdown := &model.Lockdown{DeletedSelector: svc.Spec.Selector}

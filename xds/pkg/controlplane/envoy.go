@@ -42,7 +42,7 @@ func (e *envoyControlPlane) StartAsync() error {
 
 	errChan := make(chan error)
 	go func() {
-		log.WithField("port", e.Config.Xds.Port).Info("Starting control plane server.")
+		log.WithField("port", e.Config.Xds.Port).Info("Started control plane server.")
 		err := grpcServer.Serve(lis)
 		if err != nil {
 			errChan <- err

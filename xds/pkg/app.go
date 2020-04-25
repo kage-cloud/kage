@@ -57,7 +57,7 @@ func (a *app) Start() error {
 		}
 	}
 
-	log.WithField("port", a.Config.Server.Port).Info("Starting API server")
+	log.WithField("port", a.Config.Server.Port).Info("Started API server")
 	return e.Start(fmt.Sprintf(":%d", a.Config.Server.Port))
 }
 

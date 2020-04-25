@@ -289,10 +289,9 @@ func (e *endpointsControllerService) getServiceSelectorSet(svc *corev1.Service) 
 	sel := svc.Spec.Selector
 	if sel == nil {
 		ld, err := e.LockdownService.GetLockDown(svc)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			sel = ld.DeletedSelector
 		}
-		sel = ld.DeletedSelector
 	}
 	return sel, nil
 }
