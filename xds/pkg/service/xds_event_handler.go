@@ -3,13 +3,19 @@ package service
 import (
 	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	endpointv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
+	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kengine"
+	"github.com/kage-cloud/kage/core/kube/kengine/objconv"
+	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
-	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
+	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	"github.com/kage-cloud/kage/xds/pkg/util"
 	"github.com/kage-cloud/kage/xds/pkg/util/envoyutil"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 )
@@ -17,24 +23,24 @@ import (
 const XdsEventHandlerKey = "XdsEventHandler"
 
 type XdsEventHandler interface {
-	DeployPodsEventHandler(nodeId string) model.InformEventHandler
+	DeployPodsEventHandler(nodeId string) kengine.InformEventHandler
 }
 
 type xdsEventHandler struct {
-	EndpointFactory factory.EndpointFactory `inject:"EndpointFactory"`
-	ListenerFactory factory.ListenerFactory `inject:"ListenerFactory"`
-	StoreClient     snap.StoreClient        `inject:"StoreClient"`
+	EndpointFactory   factory.EndpointFactory `inject:"EndpointFactory"`
+	ListenerFactory   factory.ListenerFactory `inject:"ListenerFactory"`
+	StoreClient       snap.StoreClient        `inject:"StoreClient"`
+	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
 }
 
-// TODO: Needs to include the services that talk to this pod.
-func (x *xdsEventHandler) DeployPodsEventHandler(nodeId string) model.InformEventHandler {
-	return &model.InformEventHandlerFuncs{
+func (x *xdsEventHandler) DeployPodsEventHandler(nodeId string) kengine.InformEventHandler {
+	return &kengine.InformEventHandlerFuncs{
 		OnWatch: x.onWatch(nodeId),
 		OnList:  x.onList(nodeId),
 	}
 }
 
-func (x *xdsEventHandler) onList(nodeId string) model.OnListEventFunc {
+func (x *xdsEventHandler) onList(nodeId string) kengine.OnListEventFunc {
 	return func(obj runtime.Object) error {
 		if v, ok := obj.(*corev1.PodList); ok {
 			for _, p := range v.Items {
@@ -50,11 +56,11 @@ func (x *xdsEventHandler) onList(nodeId string) model.OnListEventFunc {
 	}
 }
 
-func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
-	return func(event watch.Event) (error, bool) {
+func (x *xdsEventHandler) onWatch(nodeId string) kengine.OnWatchEventFunc {
+	return func(event watch.Event) error {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
 			if util.IsKageMesh(pod.Labels) {
-				return nil, true
+				return nil
 			}
 			switch event.Type {
 			case watch.Error, watch.Deleted:
@@ -64,7 +70,7 @@ func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
 						WithField("node_id", nodeId).
 						WithError(err).
 						Error("Failed to remove pod from control plane.")
-					return err, true
+					return err
 				}
 				break
 			case watch.Modified, watch.Added:
@@ -74,11 +80,11 @@ func (x *xdsEventHandler) onWatch(nodeId string) model.OnWatchEventFunc {
 						WithField("node_id", nodeId).
 						WithError(err).
 						Error("Failed to add pod to control plane.")
-					return err, true
+					return err
 				}
 			}
 		}
-		return nil, true
+		return nil
 	}
 }
 
@@ -137,27 +143,44 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 	changed := false
 	for _, c := range pod.Spec.Containers {
 		for _, cp := range c.Ports {
-			proto, err := util.KubeProtocolToSocketAddressProtocol(cp.Protocol)
+			err, changed = x.updateState(state, cp.Protocol, cp.ContainerPort, pod.Status.PodIP, nodeId)
 			if err != nil {
 				log.WithField("container", c.Name).
 					WithField("pod", pod.Name).
 					WithField("namespace", pod.Namespace).
+					WithField("node_id", nodeId).
 					WithField("protocol", cp.Protocol).
-					Debug("Protocol is not supported")
+					WithField("port", cp.ContainerPort).
+					WithField("ip", pod.Status.PodIP).
+					WithError(err).
+					Debug("Failed to add pod to Envoy config.")
 				continue
 			}
-			if !envoyutil.ContainsListenerPort(uint32(cp.ContainerPort), state.Listeners) {
-				listener, err := x.ListenerFactory.Listener(nodeId, uint32(cp.ContainerPort), proto)
+		}
+	}
+
+	svcs, err := x.getServicesForLabels(pod.Labels, pod.Namespace)
+	if err != nil {
+		log.WithError(err).
+			WithField("namespace", pod.Namespace).
+			WithField("pod", pod.Name).
+			Debug("Failed to get services for pod.")
+	} else {
+		for _, s := range svcs {
+			for _, port := range s.Spec.Ports {
+				err, changed = x.updateState(state, port.Protocol, port.TargetPort.IntVal, pod.Status.PodIP, nodeId)
 				if err != nil {
-					return err
+					log.WithField("service", s.Name).
+						WithField("pod", pod.Name).
+						WithField("namespace", s.Namespace).
+						WithField("node_id", nodeId).
+						WithField("protocol", port.Protocol).
+						WithField("port", port.TargetPort.IntVal).
+						WithField("ip", pod.Status.PodIP).
+						WithError(err).
+						Debug("Failed to add pod's service to Envoy config.")
+					continue
 				}
-				state.Listeners = append(state.Listeners, *listener)
-				changed = true
-			}
-			if !envoyutil.ContainsEndpointAddr(pod.Status.PodIP, state.Endpoints) {
-				ep := x.EndpointFactory.Endpoint(proto, pod.Status.PodIP, uint32(cp.ContainerPort))
-				state.Endpoints = append(state.Endpoints, *ep)
-				changed = true
 			}
 		}
 	}
@@ -173,4 +196,51 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 		}
 	}
 	return nil
+}
+
+func (x *xdsEventHandler) updateState(state *store.EnvoyState, protocol corev1.Protocol, port int32, ip string, nodeId string) (error, bool) {
+	proto, err := util.KubeProtocolToSocketAddressProtocol(protocol)
+	changed := false
+	if err != nil {
+		log.WithField("port", port).
+			WithField("ip", ip).
+			WithField("node_id", nodeId).
+			WithField("protocol", proto).
+			Debug("Protocol is not supported")
+	}
+	if !envoyutil.ContainsListenerPort(uint32(port), state.Listeners) {
+		listener, err := x.ListenerFactory.Listener(nodeId, uint32(port), proto)
+		if err != nil {
+			return err, false
+		}
+		state.Listeners = append(state.Listeners, *listener)
+		changed = true
+	}
+	if !envoyutil.ContainsEndpointAddr(ip, state.Endpoints) {
+		ep := x.EndpointFactory.Endpoint(proto, ip, uint32(port))
+		state.Endpoints = append(state.Endpoints, *ep)
+		changed = true
+	}
+
+	return nil, changed
+}
+
+func (x *xdsEventHandler) getServicesForLabels(set labels.Set, namespace string) ([]corev1.Service, error) {
+	svcs, err := x.KubeReaderService.ListServices(labels.Everything(), kconfig.Opt{Namespace: namespace})
+	if err != nil {
+		return nil, err
+	}
+
+	objs := kubeutil.FilterObject(func(object metav1.Object) bool {
+		if v, ok := object.(*corev1.Service); ok {
+			return labels.SelectorFromSet(v.Spec.Selector).Matches(set)
+		}
+		return false
+	}, objconv.FromServices(svcs)...)
+
+	svcs = make([]corev1.Service, len(objs))
+	for i, v := range objs {
+		svcs[i] = *v.(*corev1.Service)
+	}
+	return svcs, nil
 }

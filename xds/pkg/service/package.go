@@ -19,6 +19,8 @@ const PersistentEnvoyStateStoreKey = "PersistentEnvoyStateStore"
 
 const StoreClientKey = "StoreClient"
 
+const InformerClientKey = "InformerClient"
+
 func kubeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
 	conf := inj.GetStructPtr(config.ConfigKey).(*config.Config)
 	spec := kube.ClientSpec{
@@ -82,6 +84,11 @@ func storeClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
 	return axon.StructPtr(s)
 }
 
+func informerClientFactory(inj axon.Injector, _ axon.Args) axon.Instance {
+	client := inj.GetStructPtr(KubeClientKey).(kube.Client)
+	return axon.StructPtr(kube.NewInformerClient(client))
+}
+
 func (p *Package) Bindings() []axon.Binding {
 	return []axon.Binding{
 		axon.Bind(EndpointsControllerServiceKey).To().StructPtr(new(endpointsControllerService)),
@@ -100,5 +107,6 @@ func (p *Package) Bindings() []axon.Binding {
 		axon.Bind(LockdownServiceKey).To().Factory(lockDownServiceFactory).WithoutArgs(),
 		axon.Bind(PersistentEnvoyStateStoreKey).To().Factory(persistentEnvoyStoreFactory).WithoutArgs(),
 		axon.Bind(StoreClientKey).To().Factory(storeClientFactory).WithoutArgs(),
+		axon.Bind(InformerClientKey).To().Factory(informerClientFactory).WithoutArgs(),
 	}
 }

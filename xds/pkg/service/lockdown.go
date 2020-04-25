@@ -34,8 +34,9 @@ type LockdownService interface {
 }
 
 type lockdownService struct {
-	KubeClient        kube.Client  `inject:"KubeClient"`
-	WatchService      WatchService `inject:"WatchService"`
+	KubeClient        kube.Client       `inject:"KubeClient"`
+	KubeReaderService KubeReaderService `inject:"KubeReaderService"`
+	WatchService      WatchService      `inject:"WatchService"`
 	selectorsByDeploy map[string]labels.Set
 	lock              sync.RWMutex
 }
@@ -49,7 +50,7 @@ func (l *lockdownService) GetLockDown(svc *corev1.Service) (*model.Lockdown, err
 }
 
 func (l *lockdownService) GetLockedDownServices(opt kconfig.Opt) ([]corev1.Service, error) {
-	return l.KubeClient.ListServices(l.lockDownSelector(), opt)
+	return l.KubeReaderService.ListServices(l.lockDownSelector(), opt)
 }
 
 func (l *lockdownService) LockdownService(svc *corev1.Service, opt kconfig.Opt) error {

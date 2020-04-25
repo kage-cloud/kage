@@ -6,9 +6,8 @@ import (
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/core/kube/kengine"
+	"github.com/kage-cloud/kage/core/kube/kengine/objconv"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
-	"github.com/kage-cloud/kage/core/kube/objconv"
-	"github.com/kage-cloud/kage/xds/pkg/model"
 	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,7 +34,7 @@ type endpointsControllerService struct {
 }
 
 func (e *endpointsControllerService) Stop(blacklist []appsv1.Deployment, opt kconfig.Opt) error {
-	allSvcs, err := e.KubeClient.ListServices(labels.Everything(), opt)
+	allSvcs, err := e.KubeReaderService.ListServices(labels.Everything(), opt)
 	if err != nil {
 		return err
 	}
@@ -70,23 +69,22 @@ func (e *endpointsControllerService) Stop(blacklist []appsv1.Deployment, opt kco
 }
 
 func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error {
-	err := e.WatchService.Services(ctx, e.watchFilter(blacklist, opt), time.Second, opt, &model.InformEventHandlerFuncs{
-		OnWatch: func(event watch.Event) (error, bool) {
+	err := e.WatchService.Services(ctx, e.watchFilter(blacklist, opt), time.Second, opt, &kengine.InformEventHandlerFuncs{
+		OnWatch: func(event watch.Event) error {
 			svc, ok := event.Object.(*corev1.Service)
 			if !ok {
-				return except.NewError("Event did not contain service", except.ErrInvalid), true
+				return except.NewError("Event did not contain service", except.ErrInvalid)
 			}
 			switch event.Type {
 			case watch.Deleted:
-				kapi := e.KubeClient.Api()
-				if err := kapi.CoreV1().Endpoints(opt.Namespace).Delete(svc.Name, &metav1.DeleteOptions{}); err != nil {
+				if err := e.KubeClient.Api().CoreV1().Endpoints(opt.Namespace).Delete(svc.Name, &metav1.DeleteOptions{}); err != nil {
 					log.WithError(err).
 						WithField("name", svc.Name).
 						WithField("namespace", opt.Namespace).
 						Error("Failed to delete endpoint.")
-					return err, false
+					return err
 				}
-				return nil, false
+				return nil
 			case watch.Added, watch.Modified:
 				rses, err := e.KubeReaderService.GetDeployReplicaSets(blacklist, opt)
 				if err != nil {
@@ -95,17 +93,17 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 						WithField("name", svc.Name).
 						WithField("deploys", kubeutil.ObjNames(objconv.FromDeployments(blacklist))).
 						Debug("Failed to get replicasets.")
-					return err, true
+					return err
 				}
 				if err := e.syncService(svc, rses, opt); err != nil {
 					log.WithError(err).
 						WithField("namespace", opt.Namespace).
 						WithField("name", svc.Name).
 						Error("Failed to sync service after it was updated.")
-					return err, true
+					return err
 				}
 			}
-			return nil, true
+			return nil
 		},
 		OnList: func(obj runtime.Object) error {
 			svcList, ok := obj.(*corev1.ServiceList)
@@ -128,10 +126,10 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 				}
 			}
 
-			filter := kubeutil.SelectedObjectFilter(svcListSelectorUnion.AsSelectorPreValidated(), opt)
+			filter := kubeutil.SelectedObjectInNamespaceFilter(svcListSelectorUnion.AsSelectorPreValidated(), opt)
 
-			err := e.WatchService.Pods(ctx, filter, 3*time.Second, opt, &model.InformEventHandlerFuncs{
-				OnWatch: func(event watch.Event) (error, bool) {
+			err := e.WatchService.Pods(ctx, filter, 3*time.Second, opt, &kengine.InformEventHandlerFuncs{
+				OnWatch: func(event watch.Event) error {
 
 					switch event.Type {
 					case watch.Modified, watch.Added, watch.Deleted:
@@ -142,7 +140,7 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 								WithField("deploys", kubeutil.ObjNames(objconv.FromDeployments(blacklist))).
 								WithField("pod", event.Object.(metav1.Object).GetName()).
 								Debug("Failed to find replicasets for deploys after pod was updated")
-							return err, true
+							return err
 						}
 						for _, s := range svcList.Items {
 							if err := e.syncService(&s, rses, opt); err != nil {
@@ -151,11 +149,11 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 									WithField("service", s.Name).
 									WithField("pod", event.Object.(metav1.Object).GetName()).
 									Error("Failed to sync service after pod was updated.")
-								return err, true
+								return err
 							}
 						}
 					}
-					return nil, true
+					return nil
 				},
 				OnList: func(obj runtime.Object) error {
 					rses, err := e.KubeReaderService.GetDeployReplicaSets(blacklist, opt)
@@ -192,12 +190,12 @@ func (e *endpointsControllerService) syncService(svc *corev1.Service, blackListe
 
 	svcSelector := svcSet.AsSelectorPreValidated()
 
-	pods, err := e.KubeClient.ListPods(svcSelector, opt)
+	pods, err := e.KubeReaderService.ListPods(svcSelector, opt)
 	if err != nil {
 		return err
 	}
 
-	ep, err := e.KubeClient.GetEndpoints(svc.Name, opt)
+	ep, err := e.KubeReaderService.GetEndpoints(svc.Name, opt)
 	if err != nil {
 		return err
 	}

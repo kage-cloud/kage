@@ -8,7 +8,6 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/util/canaryutil"
 	log "github.com/sirupsen/logrus"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 )
 
@@ -21,12 +20,13 @@ type CanaryService interface {
 }
 
 type canaryService struct {
-	KubeClient    kube.Client           `inject:"KubeClient"`
-	CanaryFactory factory.CanaryFactory `inject:"CanaryFactory"`
+	KubeReaderService KubeReaderService     `inject:"KubeReaderService"`
+	KubeClient        kube.Client           `inject:"KubeClient"`
+	CanaryFactory     factory.CanaryFactory `inject:"CanaryFactory"`
 }
 
 func (c *canaryService) Get(name string, opt kconfig.Opt) (*model.Canary, error) {
-	dep, err := c.KubeClient.Api().AppsV1().Deployments(opt.Namespace).Get(name, metav1.GetOptions{})
+	dep, err := c.KubeReaderService.GetDeploy(name, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func (c *canaryService) Get(name string, opt kconfig.Opt) (*model.Canary, error)
 		return nil, err
 	}
 
-	targetDeploy, err := c.KubeClient.Api().AppsV1().Deployments(opt.Namespace).Get(targetName, metav1.GetOptions{})
+	targetDeploy, err := c.KubeReaderService.GetDeploy(targetName, opt)
 	if err != nil {
 		return nil, err
 	}

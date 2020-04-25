@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"github.com/eddieowens/axon"
-	"github.com/kage-cloud/kage/core/kube"
+	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/core/synchelpers"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	log "github.com/sirupsen/logrus"
@@ -19,11 +19,11 @@ type KageService interface {
 }
 
 type kageService struct {
-	KubeClient      kube.Client     `inject:"KubeClient"`
-	KageMeshService KageMeshService `inject:"KageMeshService"`
-	CanaryService   CanaryService   `inject:"CanaryService"`
-	WatchService    WatchService    `inject:"WatchService"`
-	Map             synchelpers.CancelFuncMap
+	KubeReaderService KubeReaderService `inject:"KubeReaderService"`
+	KageMeshService   KageMeshService   `inject:"KageMeshService"`
+	CanaryService     CanaryService     `inject:"CanaryService"`
+	WatchService      WatchService      `inject:"WatchService"`
+	Map               synchelpers.CancelFuncMap
 }
 
 func (k *kageService) Delete(spec *model.DeleteKageSpec) error {
@@ -53,7 +53,7 @@ func (k *kageService) Delete(spec *model.DeleteKageSpec) error {
 
 func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 	opt := spec.Opt
-	target, err := k.KubeClient.GetDeploy(spec.TargetDeployName, opt)
+	target, err := k.KubeReaderService.GetDeploy(spec.TargetDeployName, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +85,8 @@ func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 		return nil, err
 	}
 
-	err = k.WatchService.Deployment(ctx, canary.CanaryDeploy, 5*time.Second, &model.InformEventHandlerFuncs{
-		OnWatch: func(event watch.Event) (error, bool) {
+	err = k.WatchService.Deployment(ctx, canary.CanaryDeploy, 5*time.Second, &kengine.InformEventHandlerFuncs{
+		OnWatch: func(event watch.Event) error {
 			switch event.Type {
 			case watch.Deleted:
 				log.WithField("name", canary.CanaryDeploy.Name).
@@ -103,9 +103,9 @@ func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 					WithField("namespace", opt.Namespace).
 					WithField("canary", canary.Name).
 					Info("Successfully deleted mesh after canary was deleted.")
-				return err, false
+				return err
 			}
-			return nil, true
+			return nil
 		},
 	})
 	if err != nil {

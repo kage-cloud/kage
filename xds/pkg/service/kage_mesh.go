@@ -4,6 +4,7 @@ import (
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
@@ -13,7 +14,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/watch"
 	"time"
@@ -30,10 +30,12 @@ type KageMeshService interface {
 
 type kageMeshService struct {
 	KubeClient                 kube.Client                `inject:"KubeClient"`
+	KubeReaderService          KubeReaderService          `inject:"KubeReaderService"`
 	KageMeshFactory            factory.KageMeshFactory    `inject:"KageMeshFactory"`
 	XdsService                 XdsService                 `inject:"XdsService"`
 	EndpointsControllerService EndpointsControllerService `inject:"EndpointsControllerService"`
 	MeshConfigService          MeshConfigService          `inject:"MeshConfigService"`
+	WatchService               WatchService               `inject:"WatchService"`
 }
 
 func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {
@@ -62,17 +64,19 @@ func (k *kageMeshService) DeleteFromDeploy(kageMeshDeploy *appsv1.Deployment) er
 
 	blacklist := make([]appsv1.Deployment, 0)
 
-	targetDeploy, err := k.KubeClient.Api().AppsV1().Deployments(kageMeshDeploy.Namespace).Get(targetName, metav1.GetOptions{})
+	opt := kconfig.Opt{Namespace: kageMeshDeploy.Namespace}
+
+	targetDeploy, err := k.KubeReaderService.GetDeploy(targetName, opt)
 	if err == nil {
 		blacklist = append(blacklist, *targetDeploy)
 	}
 
-	canaryDeploy, err := k.KubeClient.Api().AppsV1().Deployments(kageMeshDeploy.Namespace).Get(canaryName, metav1.GetOptions{})
+	canaryDeploy, err := k.KubeReaderService.GetDeploy(canaryName, opt)
 	if err == nil {
 		blacklist = append(blacklist, *canaryDeploy)
 	}
 
-	return k.delete(meshConfig, blacklist, kconfig.Opt{Namespace: kageMeshDeploy.Namespace})
+	return k.delete(meshConfig, blacklist, opt)
 }
 
 func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, error) {
@@ -142,44 +146,31 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 		return nil, err
 	}
 
-	wi := k.KubeClient.InformDeploy(func(object metav1.Object) bool {
-		return object.GetName() == kageMeshName
-	})
-
-	go func() {
-		for {
-			select {
-			case r := <-wi:
-				if r.Type == watch.Deleted {
-					log.WithField("node_id", meshConfig.NodeId).
-						WithField("target", meshConfigSpec.TargetDeployName).
-						WithField("canary", meshConfigSpec.CanaryDeployName).
-						WithField("namespace", opt.Namespace).
-						Debug("Stopping kage mesh")
-					if err := k.delete(meshConfig, blacklist, opt); err != nil {
-						log.WithField("node_id", meshConfig.NodeId).
-							WithField("target", meshConfigSpec.TargetDeployName).
-							WithField("canary", meshConfigSpec.CanaryDeployName).
-							WithField("namespace", opt.Namespace).
-							WithError(err).
-							Error("Failed to stop kage mesh after it was deleted.")
-					} else {
-						return
-					}
-					break
-				}
-
-			case <-spec.Ctx.Done():
+	err = k.WatchService.Deployment(spec.Ctx, kageMeshDeploy, 5*time.Second, &kengine.InformEventHandlerFuncs{
+		OnWatch: func(event watch.Event) error {
+			if event.Type == watch.Deleted {
 				log.WithField("node_id", meshConfig.NodeId).
 					WithField("target", meshConfigSpec.TargetDeployName).
 					WithField("canary", meshConfigSpec.CanaryDeployName).
 					WithField("namespace", opt.Namespace).
-					WithError(spec.Ctx.Err()).
 					Debug("Stopping kage mesh")
-				return
+				if err := k.delete(meshConfig, blacklist, opt); err != nil {
+					log.WithField("node_id", meshConfig.NodeId).
+						WithField("target", meshConfigSpec.TargetDeployName).
+						WithField("canary", meshConfigSpec.CanaryDeployName).
+						WithField("namespace", opt.Namespace).
+						WithError(err).
+						Error("Failed to stop kage mesh after it was deleted.")
+					return err
+				}
 			}
-		}
-	}()
+			return nil
+		},
+	})
+
+	if err != nil {
+		return nil, err
+	}
 
 	return &model.KageMesh{
 		Name:       kageMeshName,
@@ -200,7 +191,7 @@ func (k *kageMeshService) Fetch(canaryDeployName string, opt kconfig.Opt) (*mode
 		return nil, err
 	}
 
-	cm, err := k.KubeClient.Api().CoreV1().ConfigMaps(opt.Namespace).Get(kageMeshDeploy.Name, metav1.GetOptions{})
+	cm, err := k.KubeReaderService.GetConfigMap(kageMeshDeploy.Name, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -219,20 +210,16 @@ func (k *kageMeshService) fetchDeployFromCanary(canaryDeployName string, opt kco
 		consts.LabelKeyResource: consts.LabelValueResourceKageMesh,
 	})
 
-	lo := metav1.ListOptions{
-		LabelSelector: selector.String(),
-	}
-
-	kageMeshDeployLists, err := k.KubeClient.Api().AppsV1().Deployments(opt.Namespace).List(lo)
+	kageMeshDeploys, err := k.KubeReaderService.ListDeploys(selector, opt)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(kageMeshDeployLists.Items) <= 0 {
+	if len(kageMeshDeploys) <= 0 {
 		return nil, except.NewError("Canary %s could not be found.", except.ErrNotFound, canaryDeployName)
 	}
 
-	return &kageMeshDeployLists.Items[0], nil
+	return &kageMeshDeploys[0], nil
 }
 
 func (k *kageMeshService) delete(meshConfig *model.MeshConfig, blacklist []appsv1.Deployment, opt kconfig.Opt) error {

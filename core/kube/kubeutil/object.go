@@ -25,9 +25,15 @@ func OwnerFilter(owners ...metav1.Object) kengine.Filter {
 	}
 }
 
-func SelectedObjectFilter(selector labels.Selector, opt kconfig.Opt) kengine.Filter {
+func SelectedObjectInNamespaceFilter(selector labels.Selector, opt kconfig.Opt) kengine.Filter {
 	return func(object metav1.Object) bool {
 		return object.GetNamespace() == opt.Namespace && selector.Matches(labels.Set(object.GetLabels()))
+	}
+}
+
+func SelectedObjectFilter(selector labels.Selector) kengine.Filter {
+	return func(object metav1.Object) bool {
+		return selector.Matches(labels.Set(object.GetLabels()))
 	}
 }
 

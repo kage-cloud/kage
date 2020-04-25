@@ -1,15 +1,20 @@
 package service
 
 import (
-	"fmt"
+	"context"
 	"github.com/kage-cloud/kage/core/kube"
+	"github.com/kage-cloud/kage/core/kube/kengine"
+	"github.com/kage-cloud/kage/core/kube/ktypes"
+	"github.com/kage-cloud/kage/core/kube/kubeutil"
+	"github.com/kage-cloud/kage/xds/pkg/config"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
+	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/watch"
+	"time"
 )
 
 const StateSyncServiceKey = "StateSyncService"
@@ -19,8 +24,9 @@ type StateSyncService interface {
 }
 
 type stateSyncService struct {
-	KubeClient  kube.Client      `inject:"KubeClient"`
-	StoreClient snap.StoreClient `inject:"StoreClient"`
+	InformerClient kube.InformerClient `inject:"InformerClient"`
+	StoreClient    snap.StoreClient    `inject:"StoreClient"`
+	Config         *config.Config      `inject:"Config"`
 }
 
 func (c *stateSyncService) Start() error {
@@ -28,34 +34,39 @@ func (c *stateSyncService) Start() error {
 		consts.LabelKeyResource: consts.LabelValueResourceSnapshot,
 	})
 
-	_, event := c.KubeClient.InformAndListConfigMap(func(object v1.Object) bool {
-		return selector.Matches(labels.Set(object.GetLabels()))
-	})
-
-	onStop := make(chan error)
-
-	go func() {
-		for {
-			select {
-			case e := <-event:
-				switch e.Type {
-				case watch.Modified, watch.Added:
-					if cm, ok := e.Object.(*corev1.ConfigMap); ok {
-						for _, nodeId := range snaputil.NodeIdsFromConfigMap(cm) {
-							if err := c.StoreClient.Reload(nodeId); err != nil {
-								fmt.Println("Failed to reload node ID", nodeId)
+	spec := kengine.InformerSpec{
+		NamespaceKind: ktypes.NewNamespaceKind(c.Config.Kube.Namespace, ktypes.KindConfigMap),
+		BatchDuration: 1 * time.Second,
+		Filter:        kubeutil.SelectedObjectFilter(selector),
+		Handlers: []kengine.InformEventHandler{
+			&kengine.InformEventHandlerFuncs{
+				OnWatch: func(event watch.Event) error {
+					switch event.Type {
+					case watch.Modified, watch.Added:
+						if cm, ok := event.Object.(*corev1.ConfigMap); ok {
+							log.WithField("name", cm.Name).
+								WithField("namespace", cm.Namespace).
+								Debug("Detected a change in the Envoy config ConfigMap. Reloading.")
+							for _, nodeId := range snaputil.NodeIdsFromConfigMap(cm) {
+								if err := c.StoreClient.Reload(nodeId); err != nil {
+									log.WithField("name", cm.Name).
+										WithField("namespace", cm.Namespace).
+										WithField("node_id", nodeId).
+										WithError(err).
+										Error("Failed to reload Envoy config from ConfigMap.")
+									return err
+								}
 							}
+							log.WithField("name", cm.Name).
+								WithField("namespace", cm.Namespace).
+								Debug("Reloaded Envoy config from ConfigMap.")
 						}
 					}
-				}
-			case err := <-onStop:
-				if err != nil {
-					fmt.Println("Stopping syncer due to error:", err.Error())
-					return
-				}
-			}
-		}
-	}()
+					return nil
+				},
+			},
+		},
+	}
 
-	return nil
+	return c.InformerClient.Inform(context.Background(), spec)
 }
