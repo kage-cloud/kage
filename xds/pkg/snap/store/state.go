@@ -1,9 +1,9 @@
 package store
 
 import (
-	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
-	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
-	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
+	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	"github.com/golang/protobuf/proto"
 	"time"
 )
@@ -22,7 +22,7 @@ type EnvoyState struct {
 
 	// The Envoy Listener definitions for the Envoy config. Required. See
 	// https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/listener.proto for more details.
-	Listeners []api.Listener `json:"listeners"`
+	Listeners []listener.Listener `json:"listeners"`
 
 	// The Envoy Route definitions for the Envoy config. Required. See
 	// https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/route/route_components.proto#route-route for more details.

@@ -1,13 +1,13 @@
 package envoyutil
 
 import (
-	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
-	corev2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
+	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 )
 
-func ListenerMatchesPort(port uint32, listener *apiv2.Listener) bool {
-	if v, ok := listener.Address.Address.(*corev2.Address_SocketAddress); ok {
-		if ps, ok := v.SocketAddress.PortSpecifier.(*corev2.SocketAddress_PortValue); ok {
+func ListenerMatchesPort(port uint32, listener *listener.Listener) bool {
+	if v, ok := listener.Address.Address.(*core.Address_SocketAddress); ok {
+		if ps, ok := v.SocketAddress.PortSpecifier.(*core.SocketAddress_PortValue); ok {
 			if ps.PortValue == port {
 				return true
 			}
@@ -16,7 +16,7 @@ func ListenerMatchesPort(port uint32, listener *apiv2.Listener) bool {
 	return false
 }
 
-func FindListenerPort(port uint32, listeners []apiv2.Listener) (*apiv2.Listener, int) {
+func FindListenerPort(port uint32, listeners []listener.Listener) (*listener.Listener, int) {
 	for i, v := range listeners {
 		if ListenerMatchesPort(port, &v) {
 			return &v, i
@@ -25,12 +25,12 @@ func FindListenerPort(port uint32, listeners []apiv2.Listener) (*apiv2.Listener,
 	return nil, -1
 }
 
-func ContainsListenerPort(port uint32, listeners []apiv2.Listener) bool {
+func ContainsListenerPort(port uint32, listeners []listener.Listener) bool {
 	v, _ := FindListenerPort(port, listeners)
 	return v != nil
 }
 
-func RemoveListenerPort(port uint32, listeners []apiv2.Listener) []apiv2.Listener {
+func RemoveListenerPort(port uint32, listeners []listener.Listener) []listener.Listener {
 	v, idx := FindListenerPort(port, listeners)
 	if v != nil {
 		return append(listeners[:idx], listeners[idx+1:]...)

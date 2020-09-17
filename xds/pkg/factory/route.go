@@ -1,8 +1,8 @@
 package factory
 
 import (
-	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
-	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher"
+	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 )

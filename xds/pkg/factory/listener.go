@@ -2,10 +2,9 @@ package factory
 
 import (
 	"fmt"
-	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
-	envcore "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
-	listener "github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
-	hcm "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2"
+	envcore "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/kage-cloud/kage/xds/pkg/model"
@@ -14,7 +13,7 @@ import (
 const ListenerFactoryKey = "ListenerFactory"
 
 type ListenerFactory interface {
-	Listener(name string, port uint32, protocol envcore.SocketAddress_Protocol) (*apiv2.Listener, error)
+	Listener(name string, port uint32, protocol envcore.SocketAddress_Protocol) (*listener.Listener, error)
 }
 
 func NewListenerFactory() ListenerFactory {
@@ -24,7 +23,7 @@ func NewListenerFactory() ListenerFactory {
 type listenerFactory struct {
 }
 
-func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.SocketAddress_Protocol) (*apiv2.Listener, error) {
+func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.SocketAddress_Protocol) (*listener.Listener, error) {
 	manager := &hcm.HttpConnectionManager{
 		StatPrefix: name,
 		RouteSpecifier: &hcm.HttpConnectionManager_Rds{
@@ -61,7 +60,7 @@ func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.So
 		return nil, err
 	}
 
-	return &apiv2.Listener{
+	return &listener.Listener{
 		Name: fmt.Sprintf("%s-%d", name, port),
 		Address: &envcore.Address{
 			Address: &envcore.Address_SocketAddress{

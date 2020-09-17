@@ -2,10 +2,11 @@ package snap
 
 import (
 	"fmt"
-	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
-	endpoint "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
-	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
-	"github.com/envoyproxy/go-control-plane/pkg/cache"
+	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
+	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/google/uuid"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
@@ -194,11 +195,11 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 	return nil
 }
 
-func (s *storeClient) routes(prevState *store.EnvoyState, routes []route.Route) ([]route.Route, []cache.Resource) {
+func (s *storeClient) routes(prevState *store.EnvoyState, routes []route.Route) ([]route.Route, []types.Resource) {
 	if len(routes) <= 0 && prevState != nil {
 		routes = prevState.Routes
 	}
-	resources := make([]cache.Resource, len(routes))
+	resources := make([]types.Resource, len(routes))
 
 	for i := range routes {
 		resources[i] = &routes[i]
@@ -206,11 +207,11 @@ func (s *storeClient) routes(prevState *store.EnvoyState, routes []route.Route) 
 	return routes, resources
 }
 
-func (s *storeClient) endpoints(prevState *store.EnvoyState, endpoints []endpoint.Endpoint) ([]endpoint.Endpoint, []cache.Resource) {
+func (s *storeClient) endpoints(prevState *store.EnvoyState, endpoints []endpoint.Endpoint) ([]endpoint.Endpoint, []types.Resource) {
 	if len(endpoints) <= 0 && prevState != nil {
 		endpoints = prevState.Endpoints
 	}
-	resources := make([]cache.Resource, len(endpoints))
+	resources := make([]types.Resource, len(endpoints))
 
 	for i := range endpoints {
 		resources[i] = &endpoints[i]
@@ -218,11 +219,11 @@ func (s *storeClient) endpoints(prevState *store.EnvoyState, endpoints []endpoin
 	return endpoints, resources
 }
 
-func (s *storeClient) listeners(prevState *store.EnvoyState, listeners []api.Listener) ([]api.Listener, []cache.Resource) {
+func (s *storeClient) listeners(prevState *store.EnvoyState, listeners []listener.Listener) ([]listener.Listener, []types.Resource) {
 	if len(listeners) <= 0 && prevState != nil {
 		listeners = prevState.Listeners
 	}
-	resources := make([]cache.Resource, len(listeners))
+	resources := make([]types.Resource, len(listeners))
 
 	for i := range listeners {
 		resources[i] = &listeners[i]

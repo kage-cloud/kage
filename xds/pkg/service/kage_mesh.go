@@ -140,7 +140,7 @@ func (k *kageMeshService) Create(spec *model.KageMeshSpec) (*model.KageMesh, err
 	}
 
 	blacklist := []appsv1.Deployment{*spec.Canary.CanaryDeploy, *spec.Canary.TargetDeploy}
-	if err := k.EndpointsControllerService.StartWithBlacklistedEndpoints(spec.Ctx, blacklist, opt); err != nil {
+	if err := k.EndpointsControllerService.StartForDeploys(spec.Ctx, blacklist, opt); err != nil {
 		_ = k.KubeClient.DeleteConfigMap(kageMeshName, opt)
 		_ = k.KubeClient.DeleteDeploy(kageMeshDeploy.Name, opt)
 		return nil, err

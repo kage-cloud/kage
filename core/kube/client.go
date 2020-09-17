@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd/api"
 	"time"
 )
 
@@ -30,6 +31,23 @@ type Client interface {
 
 	Api() kubernetes.Interface
 	ApiConfig() kconfig.Config
+}
+
+func FromApiConfig(conf *api.Config) (Client, error) {
+	configClient, err := kconfig.FromApiConfig(conf)
+	if err != nil {
+		return nil, err
+	}
+
+	inter, err := configClient.Api("")
+	if err != nil {
+		return nil, err
+	}
+
+	return &client{
+		Interface: inter,
+		Config:    configClient,
+	}, nil
 }
 
 func NewClient(spec ClientSpec) (Client, error) {

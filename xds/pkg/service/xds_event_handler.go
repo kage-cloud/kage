@@ -1,8 +1,8 @@
 package service
 
 import (
-	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
-	endpointv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
+	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/core/kube/ktypes/objconv"
 	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
@@ -95,10 +95,10 @@ func (x *xdsEventHandler) removePod(nodeId string, pod *corev1.Pod) error {
 	}
 
 	if state.Endpoints == nil {
-		state.Endpoints = make([]endpointv2.Endpoint, 0)
+		state.Endpoints = make([]endpoint.Endpoint, 0)
 	}
 	if state.Listeners == nil {
-		state.Listeners = make([]apiv2.Listener, 0)
+		state.Listeners = make([]listener.Listener, 0)
 	}
 
 	changed := false
@@ -134,10 +134,10 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 		return err
 	}
 	if state.Endpoints == nil {
-		state.Endpoints = make([]endpointv2.Endpoint, 0)
+		state.Endpoints = make([]endpoint.Endpoint, 0)
 	}
 	if state.Listeners == nil {
-		state.Listeners = make([]apiv2.Listener, 0)
+		state.Listeners = make([]listener.Listener, 0)
 	}
 
 	changed := false
@@ -209,11 +209,11 @@ func (x *xdsEventHandler) updateState(state *store.EnvoyState, protocol corev1.P
 			Debug("Protocol is not supported")
 	}
 	if !envoyutil.ContainsListenerPort(uint32(port), state.Listeners) {
-		listener, err := x.ListenerFactory.Listener(nodeId, uint32(port), proto)
+		list, err := x.ListenerFactory.Listener(nodeId, uint32(port), proto)
 		if err != nil {
 			return err, false
 		}
-		state.Listeners = append(state.Listeners, *listener)
+		state.Listeners = append(state.Listeners, *list)
 		changed = true
 	}
 	if !envoyutil.ContainsEndpointAddr(ip, state.Endpoints) {

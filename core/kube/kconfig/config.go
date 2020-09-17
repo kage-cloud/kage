@@ -3,6 +3,7 @@ package kconfig
 import (
 	"io/ioutil"
 	"k8s.io/client-go/kubernetes"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -16,6 +17,7 @@ type Opt struct {
 }
 
 type Config interface {
+	// If the context is a blank string, the current config is returned.
 	Api(context string) (kubernetes.Interface, error)
 	InCluster() bool
 	GetNamespace() string
@@ -55,11 +57,14 @@ func (c *config) InCluster() bool {
 
 func (c *config) Api(context string) (kubernetes.Interface, error) {
 	if c.Interface == nil {
+		override := &clientcmd.ConfigOverrides{}
+		if context != "" {
+			override.CurrentContext = context
+		}
+
 		conf, err := clientcmd.NewDefaultClientConfig(
 			*c.Config,
-			&clientcmd.ConfigOverrides{
-				CurrentContext: context,
-			},
+			override,
 		).ClientConfig()
 		if err != nil {
 			return nil, err
@@ -69,6 +74,27 @@ func (c *config) Api(context string) (kubernetes.Interface, error) {
 	}
 
 	return c.Interface, nil
+}
+
+func FromApiConfig(apiConf *api.Config) (Config, error) {
+	conf, err := clientcmd.NewDefaultClientConfig(
+		*apiConf,
+		&clientcmd.ConfigOverrides{},
+	).ClientConfig()
+
+	if err != nil {
+		return nil, err
+	}
+
+	inter, err := kubernetes.NewForConfig(conf)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config{
+		Config:    apiConf,
+		Interface: inter,
+	}, nil
 }
 
 func NewConfigClient(spec ConfigSpec) (Config, error) {

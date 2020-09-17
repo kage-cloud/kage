@@ -10,7 +10,7 @@ func main() {
 	injector := pkg.InjectorFactory()
 	conf := injector.GetStructPtr(config.ConfigKey).(*config.Config)
 
-	format := &log.JSONFormatter{
+	format := &log.TextFormatter{
 		TimestampFormat: conf.Log.TimeFormat,
 	}
 

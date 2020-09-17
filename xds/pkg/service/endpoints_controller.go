@@ -22,7 +22,7 @@ import (
 const EndpointsControllerServiceKey = "EndpointsControllerService"
 
 type EndpointsControllerService interface {
-	StartWithBlacklistedEndpoints(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error
+	StartForDeploys(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error
 	Stop(blacklist []appsv1.Deployment, opt kconfig.Opt) error
 }
 
@@ -69,7 +69,7 @@ func (e *endpointsControllerService) Stop(blacklist []appsv1.Deployment, opt kco
 	return nil
 }
 
-func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error {
+func (e *endpointsControllerService) StartForDeploys(ctx context.Context, blacklist []appsv1.Deployment, opt kconfig.Opt) error {
 	err := e.WatchService.Services(ctx, e.watchFilter(blacklist, opt), time.Second, opt, &kinformer.InformEventHandlerFuncs{
 		OnWatch: func(event watch.Event) error {
 			svc, ok := event.Object.(*corev1.Service)
@@ -112,22 +112,20 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 				return except.NewError("a service list was not returned on the watcher: %v", except.ErrInternalError, svcList)
 			}
 
-			svcListSelectorUnion := labels.Set{}
+			selectors := make([]labels.Selector, 0, len(svcList.Items))
 			for _, s := range svcList.Items {
 				sel, err := e.getServiceSelectorSet(&s)
 				if err != nil {
 					continue
 				}
-				svcListSelectorUnion = labels.Merge(svcListSelectorUnion, sel)
-			}
+				selectors = append(selectors, sel.AsSelectorPreValidated())
 
-			for _, s := range svcList.Items {
 				if err := e.LockdownService.LockdownService(&s, opt); err != nil {
 					return err
 				}
 			}
 
-			filter := kfilter.SelectedObjectInNamespaceFilter(svcListSelectorUnion.AsSelectorPreValidated(), opt)
+			filter := kfilter.LazyMatchesSelectorsFilter(selectors...)
 
 			err := e.WatchService.Pods(ctx, filter, 3*time.Second, opt, &kinformer.InformEventHandlerFuncs{
 				OnWatch: func(event watch.Event) error {
@@ -183,7 +181,7 @@ func (e *endpointsControllerService) StartWithBlacklistedEndpoints(ctx context.C
 
 	return nil
 }
-func (e *endpointsControllerService) syncService(svc *corev1.Service, blackListedRs []appsv1.ReplicaSet, opt kconfig.Opt) error {
+func (e *endpointsControllerService) syncService(svc *corev1.Service, replicaSets []appsv1.ReplicaSet, opt kconfig.Opt) error {
 	svcSet, err := e.getServiceSelectorSet(svc)
 	if err != nil {
 		return err
@@ -203,7 +201,7 @@ func (e *endpointsControllerService) syncService(svc *corev1.Service, blackListe
 
 	subsets := make([]corev1.EndpointSubset, 0)
 
-	rsObjs := objconv.FromReplicaSets(blackListedRs)
+	rsObjs := objconv.FromReplicaSets(replicaSets)
 
 	for _, p := range pods {
 		if kubeutil.IsOwned(&p, rsObjs...) {

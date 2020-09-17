@@ -9,14 +9,16 @@ import (
 	"github.com/stretchr/testify/suite"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/clientcmd/api"
 	"net"
 )
 
 type K3sSuite struct {
 	suite.Suite
-	Runtime runtimes.Runtime
-	Cluster *types.Cluster
-	Kube    kubernetes.Interface
+	Runtime    runtimes.Runtime
+	Cluster    *types.Cluster
+	Kube       kubernetes.Interface
+	KubeConfig *api.Config
 }
 
 func (k *K3sSuite) TearDownSuite() {
@@ -28,7 +30,7 @@ func (k *K3sSuite) SetupSuite() {
 		k.Runtime = runtimes.Docker
 	}
 
-	exposedPort, err := GetFreePort()
+	exposedPort, err := k.GetFreePort()
 	if err != nil {
 		k.FailNow(err.Error())
 	}
@@ -64,13 +66,13 @@ func (k *K3sSuite) SetupSuite() {
 		k.FailNow(err.Error())
 	}
 
-	apiConf, err := cluster.KubeconfigGet(ctx, rt, k.Cluster)
+	k.KubeConfig, err = cluster.KubeconfigGet(ctx, rt, k.Cluster)
 	if err != nil {
 		k.FailNow(err.Error())
 	}
 
 	conf, err := clientcmd.NewDefaultClientConfig(
-		*apiConf,
+		*k.KubeConfig,
 		&clientcmd.ConfigOverrides{},
 	).ClientConfig()
 
@@ -84,7 +86,7 @@ func (k *K3sSuite) SetupSuite() {
 	}
 }
 
-func GetFreePort() (int, error) {
+func (k *K3sSuite) GetFreePort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		return 0, err

@@ -3,9 +3,12 @@ package controlplane
 import (
 	"context"
 	"fmt"
-	apiv2 "github.com/envoyproxy/go-control-plane/envoy/api/v2"
-	"github.com/envoyproxy/go-control-plane/pkg/cache"
-	xds "github.com/envoyproxy/go-control-plane/pkg/server"
+	eds "github.com/envoyproxy/go-control-plane/envoy/service/endpoint/v3"
+	lds "github.com/envoyproxy/go-control-plane/envoy/service/listener/v3"
+	rds "github.com/envoyproxy/go-control-plane/envoy/service/route/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+	xds "github.com/envoyproxy/go-control-plane/pkg/server/v3"
+
 	"github.com/kage-cloud/kage/xds/pkg/config"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	log "github.com/sirupsen/logrus"
@@ -36,9 +39,9 @@ func (e *envoyControlPlane) StartAsync() error {
 		return err
 	}
 
-	apiv2.RegisterEndpointDiscoveryServiceServer(grpcServer, server)
-	apiv2.RegisterRouteDiscoveryServiceServer(grpcServer, server)
-	apiv2.RegisterListenerDiscoveryServiceServer(grpcServer, server)
+	eds.RegisterEndpointDiscoveryServiceServer(grpcServer, server)
+	rds.RegisterRouteDiscoveryServiceServer(grpcServer, server)
+	lds.RegisterListenerDiscoveryServiceServer(grpcServer, server)
 
 	errChan := make(chan error)
 	go func() {

@@ -1,7 +1,6 @@
 package kfilter
 
 import (
-	"github.com/kage-cloud/kage/core/kube/kconfig"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,9 +25,14 @@ func OwnerFilter(owners ...metav1.Object) Filter {
 	}
 }
 
-func SelectedObjectInNamespaceFilter(selector labels.Selector, opt kconfig.Opt) Filter {
+// selects all object that match at least one of the selectors
+func LazyMatchesSelectorsFilter(selectors ...labels.Selector) Filter {
 	return func(object metav1.Object) bool {
-		return object.GetNamespace() == opt.Namespace && selector.Matches(labels.Set(object.GetLabels()))
+		matches := false
+		for i := 0; i < len(selectors) && !matches; i++ {
+			matches = selectors[i].Matches(labels.Set(object.GetLabels()))
+		}
+		return matches
 	}
 }
 

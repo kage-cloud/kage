@@ -9,3 +9,4 @@ gen
 *.dylib
 *.test
 *.out
+telepresence.log

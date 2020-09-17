@@ -1,7 +1,7 @@
 package service
 
 import (
-	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
+	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"

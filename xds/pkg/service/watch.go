@@ -98,5 +98,5 @@ func (w *watchService) DeploymentPods(ctx context.Context, deploy *appsv1.Deploy
 	ns := kubeutil.DeploymentPodNamespace(deploy)
 
 	opt := kconfig.Opt{Namespace: ns}
-	return w.Pods(ctx, kfilter.SelectedObjectInNamespaceFilter(selector, opt), batchTime, opt, eventHandlers...)
+	return w.Pods(ctx, kfilter.LazyMatchesSelectorsFilter(selector), batchTime, opt, eventHandlers...)
 }
