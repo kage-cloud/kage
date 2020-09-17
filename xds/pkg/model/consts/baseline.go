@@ -15,6 +15,7 @@ dynamic_resources:
   lds_config:
     api_config_source:
       api_type: GRPC
+      transport_api_version: V3
       set_node_on_first_message_only: true
       grpc_services:
         - envoy_grpc:
@@ -37,6 +38,7 @@ static_resources:
       eds_cluster_config:
         eds_config:
           api_config_source:
+            transport_api_version: V3
             api_type: GRPC
             set_node_on_first_message_only: true
             grpc_services:
@@ -50,6 +52,7 @@ static_resources:
       eds_cluster_config:
         eds_config:
           api_config_source:
+            transport_api_version: V3
             api_type: GRPC
             set_node_on_first_message_only: true
             grpc_services:

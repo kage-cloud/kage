@@ -20,16 +20,13 @@ type EnvoyState struct {
 	// The time of creation in UTC.
 	CreationTimestampUtc time.Time `json:"creation_timestamp_utc"`
 
-	// The Envoy Listener definitions for the Envoy config. Required. See
-	// https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/listener.proto for more details.
+	// The Envoy Listener definitions for the Envoy config. Required.
 	Listeners []listener.Listener `json:"listeners"`
 
-	// The Envoy Route definitions for the Envoy config. Required. See
-	// https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/route/route_components.proto#route-route for more details.
+	// The Envoy Route definitions for the Envoy config. Required.
 	Routes []route.Route `json:"routes"`
 
-	// The Envoy Endpoint definitions for the Envoy config. Required. See
-	// https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/endpoint/endpoint_components.proto#endpoint-endpoint for
+	// The Envoy Endpoint definitions for the Envoy config. Required.
 	// more details.
 	Endpoints []endpoint.Endpoint `json:"endpoints"`
 }

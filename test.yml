@@ -32,3 +32,15 @@ spec:
     - port: 80
       targetPort: 80
   type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kage
+spec:
+  selector:
+    telepresence: 7ee153f7e8684038a24c35669cf159c6
+  ports:
+    - port: 8081
+      targetPort: 8081
+  type: ClusterIP
