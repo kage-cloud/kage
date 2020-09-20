@@ -3,12 +3,17 @@ package service
 import (
 	"context"
 	"github.com/kage-cloud/kage/core/except"
+	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
+	"github.com/kage-cloud/kage/xds/pkg/model/envoyepctlr"
 	"github.com/kage-cloud/kage/xds/pkg/model/xds"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	log "github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 const XdsServiceKey = "XdsService"
@@ -20,10 +25,10 @@ type XdsService interface {
 }
 
 type xdsService struct {
-	XdsEventHandler XdsEventHandler      `inject:"XdsEventHandler"`
-	WatchService    WatchService         `inject:"WatchService"`
-	RouteFactory    factory.RouteFactory `inject:"RouteFactory"`
-	StoreClient     snap.StoreClient     `inject:"StoreClient"`
+	EnvoyEndpointController EnvoyEndpointController `inject:"EnvoyEndpointController"`
+	WatchService            WatchService            `inject:"WatchService"`
+	RouteFactory            factory.RouteFactory    `inject:"RouteFactory"`
+	StoreClient             snap.StoreClient        `inject:"StoreClient"`
 }
 
 func (x *xdsService) StopControlPlane(nodeId string) error {
@@ -50,17 +55,33 @@ func (x *xdsService) StartControlPlane(ctx context.Context, spec *xds.ControlPla
 		return except.NewError("The control plane for canary %s already exists", except.ErrAlreadyExists, spec.CanaryDeploy.Name)
 	}
 
-	eventHandler := x.XdsEventHandler.DeployPodsEventHandler(spec.MeshConfig.NodeId)
-
 	if err := x.SetRoutingWeight(&spec.MeshConfig); err != nil {
 		return err
 	}
 
-	if err := x.WatchService.DeploymentPods(ctx, spec.TargetDeploy, 1, eventHandler); err != nil {
+	canSelector, err := metav1.LabelSelectorAsSelector(spec.CanaryDeploy.Spec.Selector)
+	if err != nil {
 		return err
 	}
 
-	if err := x.WatchService.DeploymentPods(ctx, spec.CanaryDeploy, 1, eventHandler); err != nil {
+	targetSelector, err := metav1.LabelSelectorAsSelector(spec.TargetDeploy.Spec.Selector)
+	if err != nil {
+		return err
+	}
+
+	ns := kubeutil.DeploymentPodNamespace(spec.TargetDeploy)
+	opt := kconfig.Opt{Namespace: ns}
+
+	eepcSpec := &envoyepctlr.Spec{
+		NodeId: spec.MeshConfig.NodeId,
+		Selectors: []labels.Selector{
+			canSelector,
+			targetSelector,
+		},
+		Opt: opt,
+	}
+
+	if err := x.EnvoyEndpointController.StartAsync(ctx, eepcSpec); err != nil {
 		return err
 	}
 

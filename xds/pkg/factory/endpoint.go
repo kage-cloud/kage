@@ -8,7 +8,7 @@ import (
 const EndpointFactoryKey = "EndpointFactory"
 
 type EndpointFactory interface {
-	Endpoint(protocol core.SocketAddress_Protocol, address string, port uint32) *endpoint.Endpoint
+	Endpoint(clusterName string, protocol core.SocketAddress_Protocol, address string, port uint32) *endpoint.ClusterLoadAssignment
 }
 
 func NewEndpointFactory() EndpointFactory {
@@ -18,14 +18,27 @@ func NewEndpointFactory() EndpointFactory {
 type endpointFactory struct {
 }
 
-func (e *endpointFactory) Endpoint(protocol core.SocketAddress_Protocol, address string, port uint32) *endpoint.Endpoint {
-	return &endpoint.Endpoint{
-		Address: &core.Address{
-			Address: &core.Address_SocketAddress{
-				SocketAddress: &core.SocketAddress{
-					Protocol:      protocol,
-					Address:       address,
-					PortSpecifier: &core.SocketAddress_PortValue{PortValue: port},
+func (e *endpointFactory) Endpoint(clusterName string, protocol core.SocketAddress_Protocol, address string, port uint32) *endpoint.ClusterLoadAssignment {
+	return &endpoint.ClusterLoadAssignment{
+		ClusterName: clusterName,
+		Endpoints: []*endpoint.LocalityLbEndpoints{
+			{
+				LbEndpoints: []*endpoint.LbEndpoint{
+					{
+						HostIdentifier: &endpoint.LbEndpoint_Endpoint{
+							Endpoint: &endpoint.Endpoint{
+								Address: &core.Address{
+									Address: &core.Address_SocketAddress{
+										SocketAddress: &core.SocketAddress{
+											Protocol:      protocol,
+											Address:       address,
+											PortSpecifier: &core.SocketAddress_PortValue{PortValue: port},
+										},
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},

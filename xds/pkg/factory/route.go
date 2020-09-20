@@ -2,7 +2,6 @@ package factory
 
 import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
-	matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 )
@@ -25,13 +24,8 @@ func (r *routeFactory) FromPercentage(meshConfig *model.MeshConfig) []route.Rout
 		{
 			Name: meshConfig.Target.Name,
 			Match: &route.RouteMatch{
-				PathSpecifier: &route.RouteMatch_SafeRegex{
-					SafeRegex: &matcher.RegexMatcher{
-						EngineType: &matcher.RegexMatcher_GoogleRe2{
-							GoogleRe2: &matcher.RegexMatcher_GoogleRE2{},
-						},
-						Regex: ".*",
-					},
+				PathSpecifier: &route.RouteMatch_Prefix{
+					Prefix: "/",
 				},
 			},
 			Action: &route.Route_Route{

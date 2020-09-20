@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
@@ -8,6 +9,7 @@ import (
 	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
 	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
+	"github.com/kage-cloud/kage/xds/pkg/model/envoyepctlr"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	"github.com/kage-cloud/kage/xds/pkg/util"
@@ -18,36 +20,49 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	"time"
 )
 
-const XdsEventHandlerKey = "XdsEventHandler"
+const EnvoyEndpointControllerKey = "EnvoyEndpointController"
 
-type XdsEventHandler interface {
-	DeployPodsEventHandler(nodeId string) kinformer.InformEventHandler
+type EnvoyEndpointController interface {
+	DeployPodsEventHandler(spec *envoyepctlr.Spec) kinformer.InformEventHandler
+	StartAsync(ctx context.Context, spec *envoyepctlr.Spec) error
 }
 
-type xdsEventHandler struct {
+type envoyEndpointController struct {
 	EndpointFactory   factory.EndpointFactory `inject:"EndpointFactory"`
 	ListenerFactory   factory.ListenerFactory `inject:"ListenerFactory"`
 	StoreClient       snap.StoreClient        `inject:"StoreClient"`
 	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
+	WatchService      WatchService            `inject:"WatchService"`
 }
 
-func (x *xdsEventHandler) DeployPodsEventHandler(nodeId string) kinformer.InformEventHandler {
+func (e *envoyEndpointController) StartAsync(ctx context.Context, spec *envoyepctlr.Spec) error {
+	return e.WatchService.Pods(
+		ctx,
+		kfilter.LazyMatchesSelectorsFilter(spec.Selectors...),
+		5*time.Second,
+		spec.Opt,
+		e.DeployPodsEventHandler(spec),
+	)
+}
+
+func (e *envoyEndpointController) DeployPodsEventHandler(spec *envoyepctlr.Spec) kinformer.InformEventHandler {
 	return &kinformer.InformEventHandlerFuncs{
-		OnWatch: x.onWatch(nodeId),
-		OnList:  x.onList(nodeId),
+		OnWatch: e.onWatch(spec),
+		OnList:  e.onList(spec),
 	}
 }
 
-func (x *xdsEventHandler) onList(nodeId string) kinformer.OnListEventFunc {
+func (e *envoyEndpointController) onList(spec *envoyepctlr.Spec) kinformer.OnListEventFunc {
 	return func(obj runtime.Object) error {
 		if v, ok := obj.(*corev1.PodList); ok {
 			for _, p := range v.Items {
 				if util.IsKageMesh(p.Labels) {
 					continue
 				}
-				if err := x.storePod(nodeId, &p); err != nil {
+				if err := e.storePod(spec, &p); err != nil {
 					return err
 				}
 			}
@@ -56,7 +71,7 @@ func (x *xdsEventHandler) onList(nodeId string) kinformer.OnListEventFunc {
 	}
 }
 
-func (x *xdsEventHandler) onWatch(nodeId string) kinformer.OnWatchEventFunc {
+func (e *envoyEndpointController) onWatch(spec *envoyepctlr.Spec) kinformer.OnWatchEventFunc {
 	return func(event watch.Event) error {
 		if pod, ok := event.Object.(*corev1.Pod); ok {
 			if util.IsKageMesh(pod.Labels) {
@@ -64,20 +79,20 @@ func (x *xdsEventHandler) onWatch(nodeId string) kinformer.OnWatchEventFunc {
 			}
 			switch event.Type {
 			case watch.Error, watch.Deleted:
-				if err := x.removePod(nodeId, pod); err != nil {
+				if err := e.removePod(spec.NodeId, pod); err != nil {
 					log.WithField("name", pod.Name).
 						WithField("namespace", pod.Namespace).
-						WithField("node_id", nodeId).
+						WithField("node_id", spec.NodeId).
 						WithError(err).
 						Error("Failed to remove pod from control plane.")
 					return err
 				}
 				break
 			case watch.Modified, watch.Added:
-				if err := x.storePod(nodeId, pod); err != nil {
+				if err := e.storePod(spec, pod); err != nil {
 					log.WithField("name", pod.Name).
 						WithField("namespace", pod.Namespace).
-						WithField("node_id", nodeId).
+						WithField("node_id", spec.NodeId).
 						WithError(err).
 						Error("Failed to add pod to control plane.")
 					return err
@@ -88,14 +103,14 @@ func (x *xdsEventHandler) onWatch(nodeId string) kinformer.OnWatchEventFunc {
 	}
 }
 
-func (x *xdsEventHandler) removePod(nodeId string, pod *corev1.Pod) error {
-	state, err := x.StoreClient.Get(nodeId)
+func (e *envoyEndpointController) removePod(nodeId string, pod *corev1.Pod) error {
+	state, err := e.StoreClient.Get(nodeId)
 	if err != nil {
 		return err
 	}
 
 	if state.Endpoints == nil {
-		state.Endpoints = make([]endpoint.Endpoint, 0)
+		state.Endpoints = make([]endpoint.ClusterLoadAssignment, 0)
 	}
 	if state.Listeners == nil {
 		state.Listeners = make([]listener.Listener, 0)
@@ -120,7 +135,7 @@ func (x *xdsEventHandler) removePod(nodeId string, pod *corev1.Pod) error {
 			WithField("pod", pod.Name).
 			WithField("namespace", pod.Namespace).
 			Debug("Removing pod from control plane.")
-		err = x.StoreClient.Set(state)
+		err = e.StoreClient.Set(state)
 		if err != nil {
 			return err
 		}
@@ -128,13 +143,13 @@ func (x *xdsEventHandler) removePod(nodeId string, pod *corev1.Pod) error {
 	return nil
 }
 
-func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
-	state, err := x.StoreClient.Get(nodeId)
+func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.Pod) error {
+	state, err := e.StoreClient.Get(spec.NodeId)
 	if err != nil {
 		return err
 	}
 	if state.Endpoints == nil {
-		state.Endpoints = make([]endpoint.Endpoint, 0)
+		state.Endpoints = make([]endpoint.ClusterLoadAssignment, 0)
 	}
 	if state.Listeners == nil {
 		state.Listeners = make([]listener.Listener, 0)
@@ -143,12 +158,12 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 	changed := false
 	for _, c := range pod.Spec.Containers {
 		for _, cp := range c.Ports {
-			err, changed = x.updateState(state, cp.Protocol, cp.ContainerPort, pod.Status.PodIP, nodeId)
+			err, changed = e.updateState(state, cp.Protocol, cp.ContainerPort, pod.Status.PodIP, spec)
 			if err != nil {
 				log.WithField("container", c.Name).
 					WithField("pod", pod.Name).
 					WithField("namespace", pod.Namespace).
-					WithField("node_id", nodeId).
+					WithField("node_id", spec.NodeId).
 					WithField("protocol", cp.Protocol).
 					WithField("port", cp.ContainerPort).
 					WithField("ip", pod.Status.PodIP).
@@ -159,7 +174,7 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 		}
 	}
 
-	svcs, err := x.getServicesForLabels(pod.Labels, pod.Namespace)
+	svcs, err := e.getServicesForLabels(pod.Labels, pod.Namespace)
 	if err != nil {
 		log.WithError(err).
 			WithField("namespace", pod.Namespace).
@@ -168,12 +183,12 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 	} else {
 		for _, s := range svcs {
 			for _, port := range s.Spec.Ports {
-				err, changed = x.updateState(state, port.Protocol, port.TargetPort.IntVal, pod.Status.PodIP, nodeId)
+				err, changed = e.updateState(state, port.Protocol, port.TargetPort.IntVal, pod.Status.PodIP, spec)
 				if err != nil {
 					log.WithField("service", s.Name).
 						WithField("pod", pod.Name).
 						WithField("namespace", s.Namespace).
-						WithField("node_id", nodeId).
+						WithField("node_id", spec.NodeId).
 						WithField("protocol", port.Protocol).
 						WithField("port", port.TargetPort.IntVal).
 						WithField("ip", pod.Status.PodIP).
@@ -186,11 +201,11 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 	}
 
 	if changed {
-		log.WithField("node_id", nodeId).
+		log.WithField("node_id", spec.NodeId).
 			WithField("pod", pod.Name).
 			WithField("namespace", pod.Namespace).
 			Debug("Adding pod to control plane.")
-		err = x.StoreClient.Set(state)
+		err = e.StoreClient.Set(state)
 		if err != nil {
 			return err
 		}
@@ -198,18 +213,18 @@ func (x *xdsEventHandler) storePod(nodeId string, pod *corev1.Pod) error {
 	return nil
 }
 
-func (x *xdsEventHandler) updateState(state *store.EnvoyState, protocol corev1.Protocol, port int32, ip string, nodeId string) (error, bool) {
+func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol corev1.Protocol, port int32, ip string, spec *envoyepctlr.Spec) (error, bool) {
 	proto, err := util.KubeProtocolToSocketAddressProtocol(protocol)
 	changed := false
 	if err != nil {
 		log.WithField("port", port).
 			WithField("ip", ip).
-			WithField("node_id", nodeId).
+			WithField("node_id", spec.NodeId).
 			WithField("protocol", proto).
 			Debug("Protocol is not supported")
 	}
 	if !envoyutil.ContainsListenerPort(uint32(port), state.Listeners) {
-		list, err := x.ListenerFactory.Listener(nodeId, uint32(port), proto)
+		list, err := e.ListenerFactory.Listener(spec.NodeId, uint32(port), proto)
 		if err != nil {
 			return err, false
 		}
@@ -217,7 +232,7 @@ func (x *xdsEventHandler) updateState(state *store.EnvoyState, protocol corev1.P
 		changed = true
 	}
 	if !envoyutil.ContainsEndpointAddr(ip, state.Endpoints) {
-		ep := x.EndpointFactory.Endpoint(proto, ip, uint32(port))
+		ep := e.EndpointFactory.Endpoint(proto, ip, uint32(port))
 		state.Endpoints = append(state.Endpoints, *ep)
 		changed = true
 	}
@@ -225,8 +240,8 @@ func (x *xdsEventHandler) updateState(state *store.EnvoyState, protocol corev1.P
 	return nil, changed
 }
 
-func (x *xdsEventHandler) getServicesForLabels(set labels.Set, namespace string) ([]corev1.Service, error) {
-	svcs, err := x.KubeReaderService.ListServices(labels.Everything(), kconfig.Opt{Namespace: namespace})
+func (e *envoyEndpointController) getServicesForLabels(set labels.Set, namespace string) ([]corev1.Service, error) {
+	svcs, err := e.KubeReaderService.ListServices(labels.Everything(), kconfig.Opt{Namespace: namespace})
 	if err != nil {
 		return nil, err
 	}

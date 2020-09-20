@@ -52,7 +52,7 @@ func (k *kageMeshFactory) Deploy(name, canaryDeployName, targetDeployName string
 		},
 		Spec: appsv1.DeploymentSpec{
 			Selector: metav1.SetAsLabelSelector(labels),
-			Replicas: pointer.Int32Ptr(3),
+			Replicas: pointer.Int32Ptr(1),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,

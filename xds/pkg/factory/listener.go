@@ -2,8 +2,10 @@ package factory
 
 import (
 	"fmt"
+	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	envcore "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	fileaccessloggers "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/file/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 	"github.com/golang/protobuf/ptypes"
@@ -24,6 +26,13 @@ type listenerFactory struct {
 }
 
 func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.SocketAddress_Protocol) (*listener.Listener, error) {
+	accesslogFilter := &fileaccessloggers.FileAccessLog{
+		Path: "/dev/stdout",
+	}
+	alfAny, err := ptypes.MarshalAny(accesslogFilter)
+	if err != nil {
+		return nil, err
+	}
 	manager := &hcm.HttpConnectionManager{
 		StatPrefix: name,
 		RouteSpecifier: &hcm.HttpConnectionManager_Rds{
@@ -62,6 +71,14 @@ func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.So
 
 	return &listener.Listener{
 		Name: fmt.Sprintf("%s-%d", name, port),
+		AccessLog: []*accesslog.AccessLog{
+			{
+				Name: "envoy.access_loggers.file",
+				ConfigType: &accesslog.AccessLog_TypedConfig{
+					TypedConfig: alfAny,
+				},
+			},
+		},
 		Address: &envcore.Address{
 			Address: &envcore.Address_SocketAddress{
 				SocketAddress: &envcore.SocketAddress{

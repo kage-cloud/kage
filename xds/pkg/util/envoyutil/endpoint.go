@@ -14,24 +14,38 @@ func EndpointMatchesAddr(addr string, endpoint *endpoint.Endpoint) bool {
 	return false
 }
 
-func FindEndpointAddr(addr string, endpoints []endpoint.Endpoint) (*endpoint.Endpoint, int) {
-	for i, v := range endpoints {
-		if EndpointMatchesAddr(addr, &v) {
-			return &v, i
+func FindEndpointAddr(addr string, endpoints []*endpoint.Endpoint) (*endpoint.Endpoint, int) {
+	for i := range endpoints {
+		if EndpointMatchesAddr(addr, endpoints[i]) {
+			return endpoints[i], i
 		}
 	}
 	return nil, -1
 }
 
-func ContainsEndpointAddr(addr string, endpoints []endpoint.Endpoint) bool {
-	v, _ := FindEndpointAddr(addr, endpoints)
+func AggAllEndpoints(clas []endpoint.ClusterLoadAssignment) []*endpoint.Endpoint {
+	eps := make([]*endpoint.Endpoint, 0, len(clas))
+	for i := range clas {
+		for j := range clas[i].Endpoints {
+			for x := range clas[i].Endpoints[j].LbEndpoints {
+				if v, ok := clas[i].Endpoints[j].LbEndpoints[x].HostIdentifier.(*endpoint.LbEndpoint_Endpoint); ok {
+					eps = append(eps, v.Endpoint)
+				}
+			}
+		}
+	}
+	return eps
+}
+
+func ContainsEndpointAddr(addr string, clas []endpoint.ClusterLoadAssignment) bool {
+	v, _ := FindEndpointAddr(addr, AggAllEndpoints(clas))
 	return v != nil
 }
 
-func RemoveEndpointAddr(addr string, endpoints []endpoint.Endpoint) []endpoint.Endpoint {
-	v, idx := FindEndpointAddr(addr, endpoints)
+func RemoveEndpointAddr(addr string, clas []endpoint.ClusterLoadAssignment) []endpoint.ClusterLoadAssignment {
+	v, idx := FindEndpointAddr(addr, AggAllEndpoints(clas))
 	if v != nil {
-		return append(endpoints[:idx], endpoints[idx+1:]...)
+		return append(clas[:idx], clas[idx+1:]...)
 	}
-	return endpoints
+	return clas
 }

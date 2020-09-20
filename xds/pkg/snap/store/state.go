@@ -27,6 +27,5 @@ type EnvoyState struct {
 	Routes []route.Route `json:"routes"`
 
 	// The Envoy Endpoint definitions for the Envoy config. Required.
-	// more details.
-	Endpoints []endpoint.Endpoint `json:"endpoints"`
+	Endpoints []endpoint.ClusterLoadAssignment `json:"endpoints"`
 }

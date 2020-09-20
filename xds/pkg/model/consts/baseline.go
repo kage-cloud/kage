@@ -2,7 +2,7 @@ package consts
 
 const BaselineConfig = `
 admin:
-  access_log_path: /tmp/admin_access.log
+  access_log_path: /dev/stdout
   address:
     socket_address:
       address: 127.0.0.1

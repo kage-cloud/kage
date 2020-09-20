@@ -33,8 +33,6 @@ type StoreClient interface {
 
 	// Reload a singular Node ID from the persistent store.
 	Reload(nodeId string) error
-
-	SnapshotCache() cache.SnapshotCache
 }
 
 type storeClient struct {
