@@ -5,6 +5,7 @@ import (
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube/kengine"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
+	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -186,6 +187,17 @@ func (i *informerClient) Inform(ctx context.Context, spec kinformer.InformerSpec
 	obj, err := i.List(spec.NamespaceKind, labels.Everything())
 	if err != nil {
 		return err
+	}
+	if spec.Filter != nil {
+		li := obj.(metav1.ListInterface)
+		objs := kubeutil.ObjectsFromList(li)
+		filteredObjs := make([]runtime.Object, 0, len(objs))
+		for _, o := range objs {
+			if v, ok := o.(metav1.Object); ok && spec.Filter(v) {
+				filteredObjs = append(filteredObjs, o)
+			}
+		}
+		obj = kubeutil.ToListType(spec.NamespaceKind.Kind, filteredObjs)
 	}
 
 	for _, h := range spec.Handlers {

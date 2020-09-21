@@ -23,7 +23,7 @@ func FindEndpointAddr(addr string, endpoints []*endpoint.Endpoint) (*endpoint.En
 	return nil, -1
 }
 
-func AggAllEndpoints(clas []endpoint.ClusterLoadAssignment) []*endpoint.Endpoint {
+func AggAllEndpoints(clas []*endpoint.ClusterLoadAssignment) []*endpoint.Endpoint {
 	eps := make([]*endpoint.Endpoint, 0, len(clas))
 	for i := range clas {
 		for j := range clas[i].Endpoints {
@@ -37,12 +37,12 @@ func AggAllEndpoints(clas []endpoint.ClusterLoadAssignment) []*endpoint.Endpoint
 	return eps
 }
 
-func ContainsEndpointAddr(addr string, clas []endpoint.ClusterLoadAssignment) bool {
+func ContainsEndpointAddr(addr string, clas []*endpoint.ClusterLoadAssignment) bool {
 	v, _ := FindEndpointAddr(addr, AggAllEndpoints(clas))
 	return v != nil
 }
 
-func RemoveEndpointAddr(addr string, clas []endpoint.ClusterLoadAssignment) []endpoint.ClusterLoadAssignment {
+func RemoveEndpointAddr(addr string, clas []*endpoint.ClusterLoadAssignment) []*endpoint.ClusterLoadAssignment {
 	v, idx := FindEndpointAddr(addr, AggAllEndpoints(clas))
 	if v != nil {
 		return append(clas[:idx], clas[idx+1:]...)

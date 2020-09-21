@@ -9,7 +9,7 @@ import (
 const RouteFactoryKey = "RouteFactory"
 
 type RouteFactory interface {
-	FromPercentage(meshConfig *model.MeshConfig) []route.Route
+	FromPercentage(meshConfig *model.MeshConfig) []*route.Route
 }
 
 func NewRouteFactory() RouteFactory {
@@ -19,8 +19,8 @@ func NewRouteFactory() RouteFactory {
 type routeFactory struct {
 }
 
-func (r *routeFactory) FromPercentage(meshConfig *model.MeshConfig) []route.Route {
-	return []route.Route{
+func (r *routeFactory) FromPercentage(meshConfig *model.MeshConfig) []*route.Route {
+	return []*route.Route{
 		{
 			Name: meshConfig.Target.Name,
 			Match: &route.RouteMatch{

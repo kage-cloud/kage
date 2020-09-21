@@ -13,7 +13,6 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 const XdsServiceKey = "XdsService"
@@ -74,9 +73,15 @@ func (x *xdsService) StartControlPlane(ctx context.Context, spec *xds.ControlPla
 
 	eepcSpec := &envoyepctlr.Spec{
 		NodeId: spec.MeshConfig.NodeId,
-		Selectors: []labels.Selector{
-			canSelector,
-			targetSelector,
+		PodClusters: []envoyepctlr.PodCluster{
+			{
+				Selector: targetSelector,
+				Name:     spec.MeshConfig.Target.Name,
+			},
+			{
+				Selector: canSelector,
+				Name:     spec.MeshConfig.Canary.Name,
+			},
 		},
 		Opt: opt,
 	}

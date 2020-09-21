@@ -26,7 +26,6 @@ import (
 const EnvoyEndpointControllerKey = "EnvoyEndpointController"
 
 type EnvoyEndpointController interface {
-	DeployPodsEventHandler(spec *envoyepctlr.Spec) kinformer.InformEventHandler
 	StartAsync(ctx context.Context, spec *envoyepctlr.Spec) error
 }
 
@@ -39,9 +38,13 @@ type envoyEndpointController struct {
 }
 
 func (e *envoyEndpointController) StartAsync(ctx context.Context, spec *envoyepctlr.Spec) error {
+	selectors := make([]labels.Selector, 0, len(spec.PodClusters))
+	for _, v := range spec.PodClusters {
+		selectors = append(selectors, v.Selector)
+	}
 	return e.WatchService.Pods(
 		ctx,
-		kfilter.LazyMatchesSelectorsFilter(spec.Selectors...),
+		kfilter.LazyMatchesSelectorsFilter(selectors...),
 		5*time.Second,
 		spec.Opt,
 		e.DeployPodsEventHandler(spec),
@@ -110,10 +113,10 @@ func (e *envoyEndpointController) removePod(nodeId string, pod *corev1.Pod) erro
 	}
 
 	if state.Endpoints == nil {
-		state.Endpoints = make([]endpoint.ClusterLoadAssignment, 0)
+		state.Endpoints = make([]*endpoint.ClusterLoadAssignment, 0)
 	}
 	if state.Listeners == nil {
-		state.Listeners = make([]listener.Listener, 0)
+		state.Listeners = make([]*listener.Listener, 0)
 	}
 
 	changed := false
@@ -149,16 +152,16 @@ func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.P
 		return err
 	}
 	if state.Endpoints == nil {
-		state.Endpoints = make([]endpoint.ClusterLoadAssignment, 0)
+		state.Endpoints = make([]*endpoint.ClusterLoadAssignment, 0)
 	}
 	if state.Listeners == nil {
-		state.Listeners = make([]listener.Listener, 0)
+		state.Listeners = make([]*listener.Listener, 0)
 	}
 
 	changed := false
 	for _, c := range pod.Spec.Containers {
 		for _, cp := range c.Ports {
-			err, changed = e.updateState(state, cp.Protocol, cp.ContainerPort, pod.Status.PodIP, spec)
+			err, changed = e.updateState(state, cp.Protocol, cp.ContainerPort, pod, spec)
 			if err != nil {
 				log.WithField("container", c.Name).
 					WithField("pod", pod.Name).
@@ -183,7 +186,7 @@ func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.P
 	} else {
 		for _, s := range svcs {
 			for _, port := range s.Spec.Ports {
-				err, changed = e.updateState(state, port.Protocol, port.TargetPort.IntVal, pod.Status.PodIP, spec)
+				err, changed = e.updateState(state, port.Protocol, port.TargetPort.IntVal, pod, spec)
 				if err != nil {
 					log.WithField("service", s.Name).
 						WithField("pod", pod.Name).
@@ -213,12 +216,13 @@ func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.P
 	return nil
 }
 
-func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol corev1.Protocol, port int32, ip string, spec *envoyepctlr.Spec) (error, bool) {
+func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol corev1.Protocol, port int32, pod *corev1.Pod, spec *envoyepctlr.Spec) (error, bool) {
 	proto, err := util.KubeProtocolToSocketAddressProtocol(protocol)
 	changed := false
+	podIp := pod.Status.PodIP
 	if err != nil {
 		log.WithField("port", port).
-			WithField("ip", ip).
+			WithField("ip", podIp).
 			WithField("node_id", spec.NodeId).
 			WithField("protocol", proto).
 			Debug("Protocol is not supported")
@@ -228,12 +232,14 @@ func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol 
 		if err != nil {
 			return err, false
 		}
-		state.Listeners = append(state.Listeners, *list)
+		state.Listeners = append(state.Listeners, list)
 		changed = true
 	}
-	if !envoyutil.ContainsEndpointAddr(ip, state.Endpoints) {
-		ep := e.EndpointFactory.Endpoint(proto, ip, uint32(port))
-		state.Endpoints = append(state.Endpoints, *ep)
+
+	clusterName := e.clusterName(pod, spec.PodClusters)
+	if clusterName != "" && !envoyutil.ContainsEndpointAddr(podIp, state.Endpoints) {
+		ep := e.EndpointFactory.Endpoint(clusterName, proto, pod.Status.PodIP, uint32(port))
+		state.Endpoints = append(state.Endpoints, ep)
 		changed = true
 	}
 
@@ -258,4 +264,13 @@ func (e *envoyEndpointController) getServicesForLabels(set labels.Set, namespace
 		svcs[i] = *v.(*corev1.Service)
 	}
 	return svcs, nil
+}
+
+func (e *envoyEndpointController) clusterName(pod *corev1.Pod, podClusters []envoyepctlr.PodCluster) string {
+	for _, v := range podClusters {
+		if v.Selector.Matches(labels.Set(pod.Labels)) {
+			return v.Name
+		}
+	}
+	return ""
 }

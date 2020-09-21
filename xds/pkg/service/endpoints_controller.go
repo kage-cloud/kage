@@ -268,7 +268,7 @@ func (e *endpointsControllerService) watchFilter(targets []appsv1.Deployment, op
 	return func(object metav1.Object) bool {
 		if v, ok := object.(*corev1.Service); ok {
 			selectorSet, err := e.getServiceSelectorSet(v)
-			if err != nil {
+			if err != nil || selectorSet == nil {
 				return false
 			}
 			selector := selectorSet.AsSelectorPreValidated()

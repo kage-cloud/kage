@@ -21,11 +21,11 @@ type EnvoyState struct {
 	CreationTimestampUtc time.Time `json:"creation_timestamp_utc"`
 
 	// The Envoy Listener definitions for the Envoy config. Required.
-	Listeners []listener.Listener `json:"listeners"`
+	Listeners []*listener.Listener `json:"listeners"`
 
 	// The Envoy Route definitions for the Envoy config. Required.
-	Routes []route.Route `json:"routes"`
+	Routes []*route.Route `json:"routes"`
 
 	// The Envoy Endpoint definitions for the Envoy config. Required.
-	Endpoints []endpoint.ClusterLoadAssignment `json:"endpoints"`
+	Endpoints []*endpoint.ClusterLoadAssignment `json:"endpoints"`
 }

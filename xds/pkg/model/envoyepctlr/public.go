@@ -6,7 +6,12 @@ import (
 )
 
 type Spec struct {
-	NodeId    string
-	Selectors []labels.Selector
-	Opt       kconfig.Opt
+	NodeId      string
+	PodClusters []PodCluster
+	Opt         kconfig.Opt
+}
+
+type PodCluster struct {
+	Name     string
+	Selector labels.Selector
 }

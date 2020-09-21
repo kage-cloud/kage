@@ -193,38 +193,38 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 	return nil
 }
 
-func (s *storeClient) routes(prevState *store.EnvoyState, routes []route.Route) ([]route.Route, []types.Resource) {
+func (s *storeClient) routes(prevState *store.EnvoyState, routes []*route.Route) ([]*route.Route, []types.Resource) {
 	if len(routes) <= 0 && prevState != nil {
 		routes = prevState.Routes
 	}
-	resources := make([]types.Resource, len(routes))
+	resources := make([]types.Resource, 0, len(routes))
 
 	for i := range routes {
-		resources[i] = &routes[i]
+		resources = append(resources, routes[i])
 	}
 	return routes, resources
 }
 
-func (s *storeClient) endpoints(prevState *store.EnvoyState, endpoints []endpoint.Endpoint) ([]endpoint.Endpoint, []types.Resource) {
+func (s *storeClient) endpoints(prevState *store.EnvoyState, endpoints []*endpoint.ClusterLoadAssignment) ([]*endpoint.ClusterLoadAssignment, []types.Resource) {
 	if len(endpoints) <= 0 && prevState != nil {
 		endpoints = prevState.Endpoints
 	}
-	resources := make([]types.Resource, len(endpoints))
+	resources := make([]types.Resource, 0, len(endpoints))
 
 	for i := range endpoints {
-		resources[i] = &endpoints[i]
+		resources = append(resources, endpoints[i])
 	}
 	return endpoints, resources
 }
 
-func (s *storeClient) listeners(prevState *store.EnvoyState, listeners []listener.Listener) ([]listener.Listener, []types.Resource) {
+func (s *storeClient) listeners(prevState *store.EnvoyState, listeners []*listener.Listener) ([]*listener.Listener, []types.Resource) {
 	if len(listeners) <= 0 && prevState != nil {
 		listeners = prevState.Listeners
 	}
-	resources := make([]types.Resource, len(listeners))
+	resources := make([]types.Resource, 0, len(listeners))
 
 	for i := range listeners {
-		resources[i] = &listeners[i]
+		resources = append(resources, listeners[i])
 	}
 	return listeners, resources
 }
