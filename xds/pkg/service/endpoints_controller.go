@@ -42,12 +42,10 @@ func (e *endpointsControllerService) Stop(blacklist []appsv1.Deployment, opt kco
 
 	svcs := make([]corev1.Service, 0)
 	for _, svc := range allSvcs {
-		selectorSet, err := e.getServiceSelectorSet(&svc)
-		if err != nil {
+		selector, err := e.LockdownService.GetSelector(&svc)
+		if err != nil || selector.Empty() {
 			continue
 		}
-
-		selector := selectorSet.AsSelectorPreValidated()
 
 		for _, b := range blacklist {
 			if selector.Matches(labels.Set(b.Spec.Template.Labels)) {
@@ -114,11 +112,11 @@ func (e *endpointsControllerService) StartForDeploys(ctx context.Context, blackl
 
 			selectors := make([]labels.Selector, 0, len(svcList.Items))
 			for _, s := range svcList.Items {
-				sel, err := e.getServiceSelectorSet(&s)
-				if err != nil {
+				sel, err := e.LockdownService.GetSelector(&s)
+				if err != nil || sel.Empty() {
 					continue
 				}
-				selectors = append(selectors, sel.AsSelectorPreValidated())
+				selectors = append(selectors, sel)
 
 				if err := e.LockdownService.LockdownService(&s, opt); err != nil {
 					return err
@@ -182,12 +180,13 @@ func (e *endpointsControllerService) StartForDeploys(ctx context.Context, blackl
 	return nil
 }
 func (e *endpointsControllerService) syncService(svc *corev1.Service, replicaSets []appsv1.ReplicaSet, opt kconfig.Opt) error {
-	svcSet, err := e.getServiceSelectorSet(svc)
+	svcSelector, err := e.LockdownService.GetSelector(svc)
 	if err != nil {
 		return err
 	}
-
-	svcSelector := svcSet.AsSelectorPreValidated()
+	if svcSelector.Empty() {
+		return nil
+	}
 
 	pods, err := e.KubeReaderService.ListPods(svcSelector, opt)
 	if err != nil {
@@ -267,11 +266,10 @@ func (e *endpointsControllerService) syncService(svc *corev1.Service, replicaSet
 func (e *endpointsControllerService) watchFilter(targets []appsv1.Deployment, opt kconfig.Opt) kfilter.Filter {
 	return func(object metav1.Object) bool {
 		if v, ok := object.(*corev1.Service); ok {
-			selectorSet, err := e.getServiceSelectorSet(v)
-			if err != nil || selectorSet == nil {
+			selector, err := e.LockdownService.GetSelector(v)
+			if err != nil || selector.Empty() {
 				return false
 			}
-			selector := selectorSet.AsSelectorPreValidated()
 
 			for _, t := range targets {
 				if object.GetNamespace() == opt.Namespace && selector.Matches(labels.Set(t.Spec.Template.Labels)) {
@@ -281,15 +279,4 @@ func (e *endpointsControllerService) watchFilter(targets []appsv1.Deployment, op
 		}
 		return false
 	}
-}
-
-func (e *endpointsControllerService) getServiceSelectorSet(svc *corev1.Service) (labels.Set, error) {
-	sel := svc.Spec.Selector
-	if sel == nil {
-		ld, err := e.LockdownService.GetLockDown(svc)
-		if err == nil {
-			sel = ld.DeletedSelector
-		}
-	}
-	return sel, nil
 }

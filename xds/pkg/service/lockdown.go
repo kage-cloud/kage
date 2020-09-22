@@ -26,6 +26,8 @@ type LockdownService interface {
 	// Re-adds the removed selector to the service allowing it to go back to editing the endpoints file.
 	ReleaseService(svc *corev1.Service, opt kconfig.Opt) error
 
+	GetSelector(svc *corev1.Service) (labels.Selector, error)
+
 	GetLockedDownServices(opt kconfig.Opt) ([]corev1.Service, error)
 
 	GetLockDown(svc *corev1.Service) (*model.Lockdown, error)
@@ -39,6 +41,17 @@ type lockdownService struct {
 	WatchService      WatchService      `inject:"WatchService"`
 	selectorsByDeploy map[string]labels.Set
 	lock              sync.RWMutex
+}
+
+func (l *lockdownService) GetSelector(svc *corev1.Service) (labels.Selector, error) {
+	sel := svc.Spec.Selector
+	if sel == nil {
+		ld, err := l.GetLockDown(svc)
+		if err == nil {
+			sel = ld.DeletedSelector
+		}
+	}
+	return labels.SelectorFromValidatedSet(sel), nil
 }
 
 func (l *lockdownService) GetLockDown(svc *corev1.Service) (*model.Lockdown, error) {

@@ -35,6 +35,7 @@ func NewInformerClient(apiClient Client) InformerClient {
 		Client:               apiClient,
 		factoriesLock:        sync.RWMutex{},
 		factoriesByNamespace: map[string]informers.SharedInformerFactory{},
+		informedNsKinds:      map[ktypes.NamespaceKind]struct{}{},
 	}
 }
 
@@ -43,6 +44,7 @@ type informerClient struct {
 	factoriesLock sync.RWMutex
 
 	factoriesByNamespace map[string]informers.SharedInformerFactory
+	informedNsKinds      map[ktypes.NamespaceKind]struct{}
 }
 
 func (i *informerClient) Get(nsKind ktypes.NamespaceKind, name string) (metav1.Object, error) {
@@ -162,7 +164,7 @@ func (i *informerClient) List(nsKind ktypes.NamespaceKind, selector labels.Selec
 func (i *informerClient) Informing(nsKind ktypes.NamespaceKind) bool {
 	i.factoriesLock.RLock()
 	defer i.factoriesLock.RUnlock()
-	_, ok := i.factoriesByNamespace[nsKind.Namespace]
+	_, ok := i.informedNsKinds[nsKind]
 	return ok
 }
 
@@ -218,6 +220,7 @@ func (i *informerClient) lazyGetFactory(nsKind ktypes.NamespaceKind) informers.S
 		fact = informers.NewSharedInformerFactoryWithOptions(i.Client.Api(), 0, informers.WithNamespace(nsKind.Namespace))
 		i.factoriesByNamespace[nsKind.Namespace] = fact
 	}
+	i.informedNsKinds[nsKind] = struct{}{}
 	return fact
 }
 

@@ -3,7 +3,7 @@ package controlplane
 import (
 	"context"
 	"fmt"
-	"github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	eds "github.com/envoyproxy/go-control-plane/envoy/service/endpoint/v3"
 	lds "github.com/envoyproxy/go-control-plane/envoy/service/listener/v3"
 	rds "github.com/envoyproxy/go-control-plane/envoy/service/route/v3"
@@ -41,21 +41,21 @@ func (c cb) OnStreamClosed(i int64) {
 	fmt.Println("on stream closed!!!")
 }
 
-func (c cb) OnStreamRequest(i int64, request *envoy_service_discovery_v3.DiscoveryRequest) error {
+func (c cb) OnStreamRequest(i int64, request *discovery.DiscoveryRequest) error {
 	fmt.Println("on stream req!!!")
 	return nil
 }
 
-func (c cb) OnStreamResponse(i int64, request *envoy_service_discovery_v3.DiscoveryRequest, response *envoy_service_discovery_v3.DiscoveryResponse) {
+func (c cb) OnStreamResponse(i int64, request *discovery.DiscoveryRequest, response *discovery.DiscoveryResponse) {
 	fmt.Println("on stream resp!!!")
 }
 
-func (c cb) OnFetchRequest(ctx context.Context, request *envoy_service_discovery_v3.DiscoveryRequest) error {
+func (c cb) OnFetchRequest(ctx context.Context, request *discovery.DiscoveryRequest) error {
 	fmt.Println("on fetch req!!!")
 	return nil
 }
 
-func (c cb) OnFetchResponse(request *envoy_service_discovery_v3.DiscoveryRequest, response *envoy_service_discovery_v3.DiscoveryResponse) {
+func (c cb) OnFetchResponse(request *discovery.DiscoveryRequest, response *discovery.DiscoveryResponse) {
 	fmt.Println("on fetch resp!!!")
 }
 

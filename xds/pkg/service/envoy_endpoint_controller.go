@@ -14,6 +14,7 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	"github.com/kage-cloud/kage/xds/pkg/util"
 	"github.com/kage-cloud/kage/xds/pkg/util/envoyutil"
+	"github.com/opencontainers/runc/Godeps/_workspace/src/github.com/Sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +36,7 @@ type envoyEndpointController struct {
 	StoreClient       snap.StoreClient        `inject:"StoreClient"`
 	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
 	WatchService      WatchService            `inject:"WatchService"`
+	LockdownService   LockdownService         `inject:"LockdownService"`
 }
 
 func (e *envoyEndpointController) StartAsync(ctx context.Context, spec *envoyepctlr.Spec) error {
@@ -239,6 +241,7 @@ func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol 
 	clusterName := e.clusterName(pod, spec.PodClusters)
 	if clusterName != "" && !envoyutil.ContainsEndpointAddr(podIp, state.Endpoints) {
 		ep := e.EndpointFactory.Endpoint(clusterName, proto, pod.Status.PodIP, uint32(port))
+		logrus.WithField("cluster", clusterName).WithField("pod", pod.Name).Debug("Adding endpoint from pod.")
 		state.Endpoints = append(state.Endpoints, ep)
 		changed = true
 	}
@@ -254,7 +257,10 @@ func (e *envoyEndpointController) getServicesForLabels(set labels.Set, namespace
 
 	objs := kfilter.FilterObject(func(object metav1.Object) bool {
 		if v, ok := object.(*corev1.Service); ok {
-			return labels.SelectorFromSet(v.Spec.Selector).Matches(set)
+			selector, err := e.LockdownService.GetSelector(v)
+			if err == nil && !selector.Empty() {
+				return selector.Matches(set)
+			}
 		}
 		return false
 	}, objconv.FromServices(svcs)...)

@@ -38,9 +38,11 @@ func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.So
 		RouteSpecifier: &hcm.HttpConnectionManager_Rds{
 			Rds: &hcm.Rds{
 				ConfigSource: &envcore.ConfigSource{
+					ResourceApiVersion: envcore.ApiVersion_V3,
 					ConfigSourceSpecifier: &envcore.ConfigSource_ApiConfigSource{
 						ApiConfigSource: &envcore.ApiConfigSource{
-							ApiType: envcore.ApiConfigSource_GRPC,
+							ApiType:             envcore.ApiConfigSource_GRPC,
+							TransportApiVersion: envcore.ApiVersion_V3,
 							GrpcServices: []*envcore.GrpcService{
 								{
 									TargetSpecifier: &envcore.GrpcService_EnvoyGrpc_{

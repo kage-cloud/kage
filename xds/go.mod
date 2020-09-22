@@ -11,6 +11,7 @@ require (
 	github.com/google/uuid v1.1.1
 	github.com/kage-cloud/kage/core v0.0.0-00010101000000-000000000000
 	github.com/labstack/echo/v4 v4.1.15
+	github.com/opencontainers/runc v0.1.1
 	github.com/rancher/k3d/v3 v3.0.1
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/viper v1.6.2
