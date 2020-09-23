@@ -34,9 +34,10 @@ func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.So
 		return nil, err
 	}
 	manager := &hcm.HttpConnectionManager{
-		StatPrefix: name,
+		StatPrefix: "http",
 		RouteSpecifier: &hcm.HttpConnectionManager_Rds{
 			Rds: &hcm.Rds{
+				RouteConfigName: "nginx-nginx-kage-canary",
 				ConfigSource: &envcore.ConfigSource{
 					ResourceApiVersion: envcore.ApiVersion_V3,
 					ConfigSourceSpecifier: &envcore.ConfigSource_ApiConfigSource{
@@ -56,7 +57,6 @@ func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.So
 						},
 					},
 				},
-				RouteConfigName: name,
 			},
 		},
 		HttpFilters: []*hcm.HttpFilter{
@@ -75,7 +75,7 @@ func (l *listenerFactory) Listener(name string, port uint32, protocol envcore.So
 		Name: fmt.Sprintf("%s-%d", name, port),
 		AccessLog: []*accesslog.AccessLog{
 			{
-				Name: "envoy.access_loggers.file",
+				Name: wellknown.FileAccessLog,
 				ConfigType: &accesslog.AccessLog_TypedConfig{
 					TypedConfig: alfAny,
 				},

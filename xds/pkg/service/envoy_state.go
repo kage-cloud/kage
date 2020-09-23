@@ -5,6 +5,7 @@ import (
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
+	"github.com/kage-cloud/kage/xds/pkg/util/envoyutil"
 )
 
 const EnvoyStateServiceKey = "EnvoyStateService"
@@ -18,7 +19,8 @@ type envoyStateService struct {
 }
 
 func (e *envoyStateService) FetchCanaryRouteWeight(state *store.EnvoyState) (uint32, error) {
-	for _, r := range state.Routes {
+	routes := envoyutil.AggAllRoutes(state.Routes)
+	for _, r := range routes {
 		action, ok := r.Action.(*route.Route_Route)
 		if ok {
 			if action.Route != nil {

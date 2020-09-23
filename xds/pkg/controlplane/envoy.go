@@ -7,7 +7,6 @@ import (
 	eds "github.com/envoyproxy/go-control-plane/envoy/service/endpoint/v3"
 	lds "github.com/envoyproxy/go-control-plane/envoy/service/listener/v3"
 	rds "github.com/envoyproxy/go-control-plane/envoy/service/route/v3"
-	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	serverv3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
 
 	"github.com/kage-cloud/kage/xds/pkg/config"
@@ -33,7 +32,7 @@ type cb struct {
 }
 
 func (c cb) OnStreamOpen(ctx context.Context, i int64, s string) error {
-	fmt.Println("on stream open!!!")
+	fmt.Println("on stream open!!!", i, s)
 	return nil
 }
 
@@ -60,8 +59,7 @@ func (c cb) OnFetchResponse(request *discovery.DiscoveryRequest, response *disco
 }
 
 func (e *envoyControlPlane) StartAsync() error {
-	snapshotCache := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
-	server := serverv3.NewServer(context.Background(), snapshotCache, cb{})
+	server := serverv3.NewServer(context.Background(), e.StoreClient.SnapshotCache(), cb{})
 
 	grpcServer := grpc.NewServer()
 

@@ -24,7 +24,7 @@ type EnvoyState struct {
 	Listeners []*listener.Listener `json:"listeners"`
 
 	// The Envoy Route definitions for the Envoy config. Required.
-	Routes []*route.Route `json:"routes"`
+	Routes []*route.RouteConfiguration `json:"routes"`
 
 	// The Envoy Endpoint definitions for the Envoy config. Required.
 	Endpoints []*endpoint.ClusterLoadAssignment `json:"endpoints"`

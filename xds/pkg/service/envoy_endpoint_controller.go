@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
@@ -230,7 +231,7 @@ func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol 
 			Debug("Protocol is not supported")
 	}
 	if !envoyutil.ContainsListenerPort(uint32(port), state.Listeners) {
-		list, err := e.ListenerFactory.Listener(spec.NodeId, uint32(port), proto)
+		list, err := e.ListenerFactory.Listener(fmt.Sprintf("listener-%d", port), uint32(port), proto)
 		if err != nil {
 			return err, false
 		}

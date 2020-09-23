@@ -7,9 +7,9 @@ import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
-	"github.com/google/uuid"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
+	"github.com/opencontainers/runc/Godeps/_workspace/src/github.com/Sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"
@@ -33,6 +33,8 @@ type StoreClient interface {
 
 	// Reload a singular Node ID from the persistent store.
 	Reload(nodeId string) error
+
+	SnapshotCache() cache.SnapshotCache
 }
 
 type storeClient struct {
@@ -158,7 +160,7 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 
 	compositeState := &store.EnvoyState{
 		NodeId:               state.NodeId,
-		UuidVersion:          uuid.New().String(),
+		UuidVersion:          "uuid.New().String()",
 		CreationTimestampUtc: time.Now().UTC(),
 		Listeners:            listeners,
 		Routes:               routes,
@@ -193,7 +195,7 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 	return nil
 }
 
-func (s *storeClient) routes(prevState *store.EnvoyState, routes []*route.Route) ([]*route.Route, []types.Resource) {
+func (s *storeClient) routes(prevState *store.EnvoyState, routes []*route.RouteConfiguration) ([]*route.RouteConfiguration, []types.Resource) {
 	if len(routes) <= 0 && prevState != nil {
 		routes = prevState.Routes
 	}
@@ -235,7 +237,7 @@ type StoreClientSpec struct {
 
 // Create a new StoreClient to save the EnvoyStates and update the Envoy Snapshot cache.
 func NewStoreClient(spec *StoreClientSpec) (StoreClient, error) {
-	snapshotCache := cache.NewSnapshotCache(false, cache.IDHash{}, nil)
+	snapshotCache := cache.NewSnapshotCache(false, cache.IDHash{}, &logrus.Logger{})
 
 	sc := &storeClient{
 		Cache:           snapshotCache,

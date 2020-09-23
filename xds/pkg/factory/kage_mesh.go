@@ -63,7 +63,7 @@ func (k *kageMeshFactory) Deploy(name, canaryDeployName, targetDeployName string
 							Name:  "kage-mesh",
 							Image: "envoyproxy/envoy:v1.15.0",
 							Command: []string{
-								"envoy", "-c", path.Join("/etc/envoy", consts.BaselineConfigMapFieldName),
+								"envoy", "-c", path.Join("/etc/envoy", consts.BaselineConfigMapFieldName), "-l", "debug",
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
