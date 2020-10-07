@@ -1,16 +1,22 @@
 package model
 
-import "github.com/kage-cloud/kage/core/kube/kconfig"
+import (
+	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/ktypes"
+)
 
 type KageSpec struct {
-	Opt                     kconfig.Opt
-	TargetDeployName        string
+	TargetController        ktypes.ObjectRef
 	CanaryRoutingPercentage uint32
 }
 
 type DeleteKageSpec struct {
 	Opt        kconfig.Opt
 	CanaryName string
+}
+
+type RegisterKageSpec struct {
+	TargetController ktypes.ObjectRef
 }
 
 type Kage struct {

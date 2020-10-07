@@ -44,7 +44,7 @@ func GenKageMeshAnnotations(kageMeshMeta *model.MeshConfigAnnotation) map[string
 	b, _ := json.Marshal(kageMeshMeta)
 
 	m := map[string]string{
-		consts.AnnotationKageMesh: string(b),
+		consts.AnnotationMeshConfig: string(b),
 	}
 
 	return m

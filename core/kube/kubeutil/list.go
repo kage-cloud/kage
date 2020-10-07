@@ -9,8 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-func ToListType(kind ktypes.Kind, objs []runtime.Object) runtime.Object {
-	var obj runtime.Object
+func ToListType(kind ktypes.Kind, objs []runtime.Object) metav1.ListInterface {
+	var li metav1.ListInterface
 	switch kind {
 	case ktypes.KindPod:
 		items := make([]corev1.Pod, 0, len(objs))
@@ -19,17 +19,17 @@ func ToListType(kind ktypes.Kind, objs []runtime.Object) runtime.Object {
 				items = append(items, *v)
 			}
 		}
-		obj = &corev1.PodList{
+		li = &corev1.PodList{
 			Items: items,
 		}
-	case ktypes.KindDeploy:
+	case ktypes.KindDeployment:
 		items := make([]appsv1.Deployment, 0, len(objs))
 		for _, o := range objs {
 			if v, ok := o.(*appsv1.Deployment); ok {
 				items = append(items, *v)
 			}
 		}
-		obj = &appsv1.DeploymentList{
+		li = &appsv1.DeploymentList{
 			Items: items,
 		}
 	case ktypes.KindService:
@@ -39,7 +39,7 @@ func ToListType(kind ktypes.Kind, objs []runtime.Object) runtime.Object {
 				items = append(items, *v)
 			}
 		}
-		obj = &corev1.ServiceList{
+		li = &corev1.ServiceList{
 			Items: items,
 		}
 	case ktypes.KindReplicaSet:
@@ -49,7 +49,7 @@ func ToListType(kind ktypes.Kind, objs []runtime.Object) runtime.Object {
 				items = append(items, *v)
 			}
 		}
-		obj = &appsv1.ReplicaSetList{
+		li = &appsv1.ReplicaSetList{
 			Items: items,
 		}
 	case ktypes.KindConfigMap:
@@ -59,7 +59,7 @@ func ToListType(kind ktypes.Kind, objs []runtime.Object) runtime.Object {
 				items = append(items, *v)
 			}
 		}
-		obj = &corev1.ConfigMapList{
+		li = &corev1.ConfigMapList{
 			Items: items,
 		}
 	case ktypes.KindEndpoints:
@@ -69,12 +69,12 @@ func ToListType(kind ktypes.Kind, objs []runtime.Object) runtime.Object {
 				items = append(items, *v)
 			}
 		}
-		obj = &corev1.EndpointsList{
+		li = &corev1.EndpointsList{
 			Items: items,
 		}
 	}
 
-	return obj
+	return li
 }
 
 func ObjectsFromList(list metav1.ListInterface) []runtime.Object {

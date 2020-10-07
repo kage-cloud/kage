@@ -80,3 +80,22 @@ spec:
     - port: 80
       targetPort: 80
   type: ClusterIP
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: derp
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+      imagePullPolicy: IfNotPresent
+      volumeMounts:
+        - mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          name: nginx
+          readOnly: true
+  volumes:
+    - name: nginx
+      configMap:
+        name: nginx

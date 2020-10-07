@@ -2,8 +2,8 @@ package kengine
 
 import (
 	"context"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"k8s.io/client-go/util/workqueue"
 	"sync"
 )

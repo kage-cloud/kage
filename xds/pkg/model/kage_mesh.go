@@ -8,9 +8,13 @@ import (
 )
 
 type MeshConfigAnnotation struct {
-	NodeId            string
-	CanaryClusterName string
-	TargetClusterName string
+	// The metadata required for XDS indexed by the Node ID.
+	XdsMetas map[string]XdsMeta `json:"xds_metas"`
+}
+
+type XdsMeta struct {
+	NodeId      string `json:"node_id"`
+	ClusterName string `json:"cluster_name"`
 }
 
 type KageMesh struct {

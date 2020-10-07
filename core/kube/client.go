@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/ktypes"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -28,6 +30,12 @@ type Client interface {
 	DeleteDeploy(name string, opt kconfig.Opt) error
 	CreateDeploy(deploy *appsv1.Deployment, opt kconfig.Opt) (*appsv1.Deployment, error)
 	UpdateService(service *corev1.Service, opt kconfig.Opt) (*corev1.Service, error)
+
+	Get(name string, kind ktypes.Kind, opt kconfig.Opt) (runtime.Object, error)
+	List(kind ktypes.Kind, options metav1.ListOptions, opt kconfig.Opt) (metav1.ListInterface, error)
+	Create(obj runtime.Object, opt kconfig.Opt) (runtime.Object, error)
+	Delete(name string, kind ktypes.Kind, opt kconfig.Opt) error
+	Update(obj runtime.Object, opt kconfig.Opt) (runtime.Object, error)
 
 	Api() kubernetes.Interface
 	ApiConfig() kconfig.Config
@@ -75,6 +83,121 @@ type ClientSpec struct {
 type client struct {
 	Interface kubernetes.Interface
 	Config    kconfig.Config
+}
+
+func (c *client) Create(obj runtime.Object, opt kconfig.Opt) (runtime.Object, error) {
+	switch typ := obj.(type) {
+	case *corev1.Pod:
+		return c.Api().CoreV1().Pods(opt.Namespace).Update(typ)
+	case *appsv1.Deployment:
+		return c.Api().AppsV1().Deployments(opt.Namespace).Update(typ)
+	case *corev1.Service:
+		return c.Api().CoreV1().Services(opt.Namespace).Update(typ)
+	case *appsv1.ReplicaSet:
+		return c.Api().AppsV1().ReplicaSets(opt.Namespace).Update(typ)
+	case *corev1.ConfigMap:
+		return c.Api().CoreV1().ConfigMaps(opt.Namespace).Update(typ)
+	case *corev1.Endpoints:
+		return c.Api().CoreV1().Endpoints(opt.Namespace).Update(typ)
+	case *appsv1.DaemonSet:
+		return c.Api().AppsV1().DaemonSets(opt.Namespace).Update(typ)
+	case *appsv1.StatefulSet:
+		return c.Api().AppsV1().StatefulSets(opt.Namespace).Update(typ)
+	}
+
+	return nil, except.NewError("%T is not a supported Kubernetes kind", except.ErrUnsupported, obj)
+}
+
+func (c *client) Delete(name string, kind ktypes.Kind, opt kconfig.Opt) error {
+	switch kind {
+	case ktypes.KindPod:
+		return c.Api().CoreV1().Pods(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	case ktypes.KindDeployment:
+		return c.Api().AppsV1().Deployments(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	case ktypes.KindService:
+		return c.Api().CoreV1().Services(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	case ktypes.KindReplicaSet:
+		return c.Api().AppsV1().ReplicaSets(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	case ktypes.KindConfigMap:
+		return c.Api().CoreV1().ConfigMaps(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	case ktypes.KindEndpoints:
+		return c.Api().CoreV1().Endpoints(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	case ktypes.KindDaemonSet:
+		return c.Api().AppsV1().DaemonSets(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	case ktypes.KindStatefulSet:
+		return c.Api().AppsV1().StatefulSets(opt.Namespace).Delete(name, &metav1.DeleteOptions{})
+	}
+
+	return except.NewError("%s is not a supported Kubernetes kind", except.ErrUnsupported, kind)
+}
+
+func (c *client) Update(obj runtime.Object, opt kconfig.Opt) (runtime.Object, error) {
+	switch typ := obj.(type) {
+	case *corev1.Pod:
+		return c.Api().CoreV1().Pods(opt.Namespace).Create(typ)
+	case *appsv1.Deployment:
+		return c.Api().AppsV1().Deployments(opt.Namespace).Create(typ)
+	case *corev1.Service:
+		return c.Api().CoreV1().Services(opt.Namespace).Create(typ)
+	case *appsv1.ReplicaSet:
+		return c.Api().AppsV1().ReplicaSets(opt.Namespace).Create(typ)
+	case *corev1.ConfigMap:
+		return c.Api().CoreV1().ConfigMaps(opt.Namespace).Create(typ)
+	case *corev1.Endpoints:
+		return c.Api().CoreV1().Endpoints(opt.Namespace).Create(typ)
+	case *appsv1.DaemonSet:
+		return c.Api().AppsV1().DaemonSets(opt.Namespace).Create(typ)
+	case *appsv1.StatefulSet:
+		return c.Api().AppsV1().StatefulSets(opt.Namespace).Create(typ)
+	}
+
+	return nil, except.NewError("%T is not a supported Kubernetes kind", except.ErrUnsupported, obj)
+}
+
+func (c *client) List(kind ktypes.Kind, options metav1.ListOptions, opt kconfig.Opt) (metav1.ListInterface, error) {
+	switch kind {
+	case ktypes.KindPod:
+		return c.Api().CoreV1().Pods(opt.Namespace).List(options)
+	case ktypes.KindDeployment:
+		return c.Api().AppsV1().Deployments(opt.Namespace).List(options)
+	case ktypes.KindService:
+		return c.Api().CoreV1().Services(opt.Namespace).List(options)
+	case ktypes.KindReplicaSet:
+		return c.Api().AppsV1().ReplicaSets(opt.Namespace).List(options)
+	case ktypes.KindConfigMap:
+		return c.Api().CoreV1().ConfigMaps(opt.Namespace).List(options)
+	case ktypes.KindEndpoints:
+		return c.Api().CoreV1().Endpoints(opt.Namespace).List(options)
+	case ktypes.KindDaemonSet:
+		return c.Api().AppsV1().DaemonSets(opt.Namespace).List(options)
+	case ktypes.KindStatefulSet:
+		return c.Api().AppsV1().StatefulSets(opt.Namespace).List(options)
+	}
+
+	return nil, except.NewError("%s is not a supported Kubernetes kind", except.ErrUnsupported, kind)
+}
+
+func (c *client) Get(name string, kind ktypes.Kind, opt kconfig.Opt) (runtime.Object, error) {
+	switch kind {
+	case ktypes.KindPod:
+		return c.Api().CoreV1().Pods(opt.Namespace).Get(name, metav1.GetOptions{})
+	case ktypes.KindDeployment:
+		return c.Api().AppsV1().Deployments(opt.Namespace).Get(name, metav1.GetOptions{})
+	case ktypes.KindService:
+		return c.Api().CoreV1().Services(opt.Namespace).Get(name, metav1.GetOptions{})
+	case ktypes.KindReplicaSet:
+		return c.Api().AppsV1().ReplicaSets(opt.Namespace).Get(name, metav1.GetOptions{})
+	case ktypes.KindConfigMap:
+		return c.Api().CoreV1().ConfigMaps(opt.Namespace).Get(name, metav1.GetOptions{})
+	case ktypes.KindEndpoints:
+		return c.Api().CoreV1().Endpoints(opt.Namespace).Get(name, metav1.GetOptions{})
+	case ktypes.KindDaemonSet:
+		return c.Api().AppsV1().DaemonSets(opt.Namespace).Get(name, metav1.GetOptions{})
+	case ktypes.KindStatefulSet:
+		return c.Api().AppsV1().StatefulSets(opt.Namespace).Get(name, metav1.GetOptions{})
+	}
+
+	return nil, except.NewError("%s is not a supported Kubernetes kind", except.ErrUnsupported, kind)
 }
 
 func (c *client) SaveEndpoints(ep *corev1.Endpoints, opt kconfig.Opt) (*corev1.Endpoints, error) {

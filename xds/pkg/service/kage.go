@@ -3,7 +3,8 @@ package service
 import (
 	"context"
 	"github.com/eddieowens/axon"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
+	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"github.com/kage-cloud/kage/core/synchelpers"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	log "github.com/sirupsen/logrus"
@@ -15,6 +16,7 @@ const KageServiceKey = "KageService"
 
 type KageService interface {
 	Create(spec *model.KageSpec) (*model.Kage, error)
+	Register()
 	Delete(spec *model.DeleteKageSpec) error
 }
 
@@ -52,8 +54,8 @@ func (k *kageService) Delete(spec *model.DeleteKageSpec) error {
 }
 
 func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
-	opt := spec.Opt
-	target, err := k.KubeReaderService.GetDeploy(spec.TargetDeployName, opt)
+	opt := kconfig.Opt{Namespace: spec.TargetController.Namespace}
+	target, err := k.KubeReaderService.Get(spec.TargetController.Name, spec.TargetController.Kind, opt)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/fatih/structtag"
+	"path"
 	"reflect"
 	"strconv"
 	"strings"
@@ -12,36 +13,33 @@ import (
 
 type fields struct {
 	// list of field names to ignore based on tags
+	Struct       reflect.Value
 	Fields       map[string]reflect.Value
 	NestedFields map[string]fields
 }
 
-func toMapRecurse(domain string, fields fields, m map[string]string) {
-	domainEmpty := domain == ""
+func toMapRecurse(domain, keyPath string, fields fields, m map[string]string) {
 	for k, v := range fields.Fields {
-		keyStr := k
-		if !domainEmpty {
-			keyStr = fmt.Sprintf("%s/%s", domain, k)
-		}
-
-		m[keyStr] = valAsString(v)
+		m[path.Join(domain, keyPath, k)] = valAsString(v)
 	}
 
 	for k, v := range fields.NestedFields {
-		toMapRecurse(fmt.Sprintf("%s/%s", domain, k), v, m)
+		toMapRecurse(domain, strings.Join([]string{keyPath, k}, "/"), v, m)
 	}
 }
 
-func setFieldFromAnnoStr(splitAnnoKey []string, annoVal string, dst reflect.Value) error {
-	if len(splitAnnoKey) == 0 {
-		return setValFromString(annoVal, dst)
-	} else if isStructOrStructPtr(dst.Type()) {
-		v, ok := findField(dst, splitAnnoKey[0])
-		if ok {
-			return setFieldFromAnnoStr(splitAnnoKey[1:], annoVal, v)
+func setFieldFromAnnoStr(splitKeyPath []string, annoVal string, field reflect.Value) error {
+	var ok bool
+	for _, v := range splitKeyPath {
+		if isStructOrStructPtr(field.Type()) {
+			field, ok = findField(field, v)
+			if !ok {
+				return nil
+			}
 		}
 	}
-	return nil
+
+	return setValFromString(annoVal, field)
 }
 
 func findField(v reflect.Value, fieldName string) (reflect.Value, bool) {
@@ -49,7 +47,16 @@ func findField(v reflect.Value, fieldName string) (reflect.Value, bool) {
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Type().Field(i)
 
-		name, _ := getFieldNameAndJsonTag(field)
+		var name string
+		if field.Anonymous {
+			val, ok := findField(v.Field(i), fieldName)
+			if ok {
+				return val, ok
+			}
+		} else {
+			name, _ = getFieldNameAndJsonTag(field)
+		}
+
 		if fieldName == name {
 			return v.Field(i), true
 		}
@@ -170,6 +177,8 @@ func getFieldsByJsonName(v reflect.Value) fields {
 		return m
 	}
 
+	m.Struct = v
+
 	for i := 0; i < typ.NumField(); i++ {
 		fieldType := typ.Field(i)
 		fieldVal := v.Field(i)
@@ -186,7 +195,14 @@ func getFieldsByJsonName(v reflect.Value) fields {
 			continue
 		}
 
-		if isStructOrStructPtr(fieldType.Type) {
+		if fieldType.Anonymous {
+			if isStructOrStructPtr(fieldType.Type) {
+				subFieldVal := getFieldsByJsonName(fieldVal)
+				for k, v := range subFieldVal.Fields {
+					m.Fields[k] = v
+				}
+			}
+		} else if isStructOrStructPtr(fieldType.Type) {
 			subFieldVal := getFieldsByJsonName(fieldVal)
 			m.NestedFields[name] = subFieldVal
 		} else {

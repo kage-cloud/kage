@@ -2,9 +2,9 @@ package kinformer
 
 import (
 	"context"
+	"github.com/kage-cloud/kage/core/kube/kfilter"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"time"
 )
@@ -41,18 +41,18 @@ func (i *InformEventHandlerFuncs) OnWatchEvent(event watch.Event) error {
 	}
 }
 
-func (i *InformEventHandlerFuncs) OnListEvent(obj runtime.Object) error {
+func (i *InformEventHandlerFuncs) OnListEvent(li metav1.ListInterface) error {
 	if i.OnList != nil {
-		return i.OnList(obj)
+		return i.OnList(li)
 	}
 	return nil
 }
 
 type InformEventHandler interface {
 	OnWatchEvent(event watch.Event) error
-	OnListEvent(obj runtime.Object) error
+	OnListEvent(li metav1.ListInterface) error
 }
 
 type OnWatchEventFunc func(event watch.Event) error
 
-type OnListEventFunc func(obj runtime.Object) error
+type OnListEventFunc func(li metav1.ListInterface) error

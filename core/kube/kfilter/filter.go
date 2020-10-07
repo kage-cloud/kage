@@ -1,10 +1,11 @@
 package kfilter
 
 import (
+	"github.com/kage-cloud/kage/core/kube/ktypes"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
-	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type Filter func(object metav1.Object) bool
@@ -36,15 +37,24 @@ func LazyMatchesSelectorsFilter(selectors ...labels.Selector) Filter {
 	}
 }
 
-func SelectedObjectFilter(selector labels.Selector) Filter {
+func LabelSelectorFilter(selector labels.Selector) Filter {
 	return func(object metav1.Object) bool {
 		return selector.Matches(labels.Set(object.GetLabels()))
 	}
 }
 
-func SelectsDeployPodsFilter(deploys ...appsv1.Deployment) Filter {
+func AnnotationSelectorFilter(selector labels.Selector) Filter {
 	return func(object metav1.Object) bool {
+		return selector.Matches(labels.Set(object.GetAnnotations()))
+	}
+}
 
-		return false
+func SelectsSet(set labels.Set) Filter {
+	return func(object metav1.Object) bool {
+		selector := ktypes.GetLabelSelector(object.(runtime.Object))
+		if selector == nil {
+			return false
+		}
+		return selector.Matches(set)
 	}
 }

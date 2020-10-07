@@ -7,6 +7,7 @@ import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+	"github.com/google/uuid"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	"github.com/opencontainers/runc/Godeps/_workspace/src/github.com/Sirupsen/logrus"
@@ -31,6 +32,8 @@ type StoreClient interface {
 	// Loads the entirety of the EnvoyState from the persistent Store into the StoreClient.
 	Load() error
 
+	List() map[string]store.EnvoyState
+
 	// Reload a singular Node ID from the persistent store.
 	Reload(nodeId string) error
 
@@ -50,6 +53,10 @@ type storeClient struct {
 	syncChan chan string
 
 	lock sync.RWMutex
+}
+
+func (s *storeClient) List() map[string]store.EnvoyState {
+	return s.CurrentStates
 }
 
 func (s *storeClient) SnapshotCache() cache.SnapshotCache {
@@ -160,7 +167,7 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 
 	compositeState := &store.EnvoyState{
 		NodeId:               state.NodeId,
-		UuidVersion:          "uuid.New().String()",
+		UuidVersion:          uuid.New().String(),
 		CreationTimestampUtc: time.Now().UTC(),
 		Listeners:            listeners,
 		Routes:               routes,
@@ -174,7 +181,7 @@ func (s *storeClient) set(state *store.EnvoyState) error {
 	}
 
 	snapshot := cache.NewSnapshot(
-		compositeState.UuidVersion,
+		"1",
 		endpointResources,
 		nil,
 		routeResources,

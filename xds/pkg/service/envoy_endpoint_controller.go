@@ -5,11 +5,13 @@ import (
 	"fmt"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
+	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kfilter"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"github.com/kage-cloud/kage/core/kube/ktypes/objconv"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
+	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/envoyepctlr"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
@@ -45,13 +47,48 @@ func (e *envoyEndpointController) StartAsync(ctx context.Context, spec *envoyepc
 	for _, v := range spec.PodClusters {
 		selectors = append(selectors, v.Selector)
 	}
-	return e.WatchService.Pods(
-		ctx,
-		kfilter.LazyMatchesSelectorsFilter(selectors...),
-		5*time.Second,
-		spec.Opt,
-		e.DeployPodsEventHandler(spec),
-	)
+
+	return e.WatchService.Services(ctx, func(object metav1.Object) bool {
+		return e.LockdownService.IsLockedDown(object)
+	}, 3*time.Second, spec.Opt)
+}
+
+func (e *envoyEndpointController) name(opt kconfig.Opt) kinformer.InformEventHandler {
+	return &kinformer.InformEventHandlerFuncs{
+		OnWatch: nil,
+		OnList: func(obj metav1.ListInterface) error {
+			svcs, ok := obj.(*corev1.ServiceList)
+			if !ok {
+				return except.NewError("expected a service list but got %T", except.ErrInternalError, obj)
+			}
+
+			for _, v := range svcs.Items {
+				selector, err := e.LockdownService.GetSelector(&v)
+				if err != nil || selector.Empty() {
+					log.WithField("selector", selector).
+						WithError(err).
+						WithField("name", v.Name).
+						WithField("namespace", v.Namespace).
+						Debug("Could not add envoy endpoints for service as no selector could be found.")
+					continue
+				}
+
+				pods, err := e.KubeReaderService.ListPods(selector, opt)
+				if err != nil {
+					log.WithField("selector", selector).
+						WithError(err).
+						WithField("name", v.Name).
+						WithField("namespace", v.Namespace).
+						Debug("Could not add envoy endpoints for service. Failed to list pods for service's selector.")
+					continue
+				}
+
+				for _, v := range pods {
+
+				}
+			}
+		},
+	}
 }
 
 func (e *envoyEndpointController) DeployPodsEventHandler(spec *envoyepctlr.Spec) kinformer.InformEventHandler {
@@ -149,8 +186,8 @@ func (e *envoyEndpointController) removePod(nodeId string, pod *corev1.Pod) erro
 	return nil
 }
 
-func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.Pod) error {
-	state, err := e.StoreClient.Get(spec.NodeId)
+func (e *envoyEndpointController) storePod(meta *model.XdsMeta, pod *corev1.Pod) error {
+	state, err := e.StoreClient.Get(meta.NodeId)
 	if err != nil {
 		return err
 	}
@@ -164,12 +201,12 @@ func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.P
 	changed := false
 	for _, c := range pod.Spec.Containers {
 		for _, cp := range c.Ports {
-			err, changed = e.updateState(state, cp.Protocol, cp.ContainerPort, pod, spec)
+			err, changed = e.updateState(state, cp.Protocol, cp.ContainerPort, pod, meta)
 			if err != nil {
 				log.WithField("container", c.Name).
 					WithField("pod", pod.Name).
 					WithField("namespace", pod.Namespace).
-					WithField("node_id", spec.NodeId).
+					WithField("node_id", meta.NodeId).
 					WithField("protocol", cp.Protocol).
 					WithField("port", cp.ContainerPort).
 					WithField("ip", pod.Status.PodIP).
@@ -189,12 +226,12 @@ func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.P
 	} else {
 		for _, s := range svcs {
 			for _, port := range s.Spec.Ports {
-				err, changed = e.updateState(state, port.Protocol, port.TargetPort.IntVal, pod, spec)
+				err, changed = e.updateState(state, port.Protocol, port.TargetPort.IntVal, pod, meta)
 				if err != nil {
 					log.WithField("service", s.Name).
 						WithField("pod", pod.Name).
 						WithField("namespace", s.Namespace).
-						WithField("node_id", spec.NodeId).
+						WithField("node_id", meta.NodeId).
 						WithField("protocol", port.Protocol).
 						WithField("port", port.TargetPort.IntVal).
 						WithField("ip", pod.Status.PodIP).
@@ -207,7 +244,7 @@ func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.P
 	}
 
 	if changed {
-		log.WithField("node_id", spec.NodeId).
+		log.WithField("node_id", meta.NodeId).
 			WithField("pod", pod.Name).
 			WithField("namespace", pod.Namespace).
 			Debug("Adding pod to control plane.")
@@ -219,14 +256,14 @@ func (e *envoyEndpointController) storePod(spec *envoyepctlr.Spec, pod *corev1.P
 	return nil
 }
 
-func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol corev1.Protocol, port int32, pod *corev1.Pod, spec *envoyepctlr.Spec) (error, bool) {
+func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol corev1.Protocol, port int32, pod *corev1.Pod, meta *model.XdsMeta) (error, bool) {
 	proto, err := util.KubeProtocolToSocketAddressProtocol(protocol)
 	changed := false
 	podIp := pod.Status.PodIP
 	if err != nil {
 		log.WithField("port", port).
 			WithField("ip", podIp).
-			WithField("node_id", spec.NodeId).
+			WithField("node_id", meta.NodeId).
 			WithField("protocol", proto).
 			Debug("Protocol is not supported")
 	}
@@ -239,10 +276,9 @@ func (e *envoyEndpointController) updateState(state *store.EnvoyState, protocol 
 		changed = true
 	}
 
-	clusterName := e.clusterName(pod, spec.PodClusters)
-	if clusterName != "" && !envoyutil.ContainsEndpointAddr(podIp, state.Endpoints) {
-		ep := e.EndpointFactory.Endpoint(clusterName, proto, pod.Status.PodIP, uint32(port))
-		logrus.WithField("cluster", clusterName).WithField("pod", pod.Name).Debug("Adding endpoint from pod.")
+	if !envoyutil.ContainsEndpointAddr(podIp, state.Endpoints) {
+		ep := e.EndpointFactory.Endpoint(meta.ClusterName, proto, pod.Status.PodIP, uint32(port))
+		logrus.WithField("cluster", meta.ClusterName).WithField("pod", pod.Name).Debug("Adding endpoint from pod.")
 		state.Endpoints = append(state.Endpoints, ep)
 		changed = true
 	}
@@ -271,13 +307,4 @@ func (e *envoyEndpointController) getServicesForLabels(set labels.Set, namespace
 		svcs[i] = *v.(*corev1.Service)
 	}
 	return svcs, nil
-}
-
-func (e *envoyEndpointController) clusterName(pod *corev1.Pod, podClusters []envoyepctlr.PodCluster) string {
-	for _, v := range podClusters {
-		if v.Selector.Matches(labels.Set(pod.Labels)) {
-			return v.Name
-		}
-	}
-	return ""
 }

@@ -4,10 +4,10 @@ import (
 	"context"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
+	"github.com/kage-cloud/kage/core/kube/kfilter"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +34,7 @@ type watchService struct {
 
 func (w *watchService) Deployment(ctx context.Context, deploy *appsv1.Deployment, batchTime time.Duration, eventHandlers ...kinformer.InformEventHandler) error {
 	spec := kinformer.InformerSpec{
-		NamespaceKind: ktypes.NewNamespaceKind(deploy.Namespace, ktypes.KindDeploy),
+		NamespaceKind: ktypes.NewNamespaceKind(deploy.Namespace, ktypes.KindDeployment),
 		BatchDuration: batchTime,
 		Filter: func(object metav1.Object) bool {
 			if v, ok := object.(*appsv1.Deployment); ok {

@@ -4,9 +4,9 @@ import (
 	"context"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube/kengine"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
 	"github.com/kage-cloud/kage/core/kube/kubeutil"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,17 +25,16 @@ type InformerClient interface {
 	Inform(ctx context.Context, spec kinformer.InformerSpec) error
 
 	// Returns a Kind list so if the kind is a Deploy, an *appsv1.DeploymentList is returned.
-	List(nsKind ktypes.NamespaceKind, selector labels.Selector) (runtime.Object, error)
+	List(nsKind ktypes.NamespaceKind, selector labels.Selector) (metav1.ListInterface, error)
 
-	Get(nsKind ktypes.NamespaceKind, name string) (metav1.Object, error)
+	Get(nsKind ktypes.NamespaceKind, name string) (runtime.Object, error)
 }
 
 func NewInformerClient(apiClient Client) InformerClient {
 	return &informerClient{
-		Client:               apiClient,
-		factoriesLock:        sync.RWMutex{},
-		factoriesByNamespace: map[string]informers.SharedInformerFactory{},
-		informedNsKinds:      map[ktypes.NamespaceKind]struct{}{},
+		Client:                   apiClient,
+		factoriesLock:            sync.RWMutex{},
+		factoriesByNamespaceKind: map[ktypes.NamespaceKind]informers.SharedInformerFactory{},
 	}
 }
 
@@ -43,11 +42,10 @@ type informerClient struct {
 	Client        Client
 	factoriesLock sync.RWMutex
 
-	factoriesByNamespace map[string]informers.SharedInformerFactory
-	informedNsKinds      map[ktypes.NamespaceKind]struct{}
+	factoriesByNamespaceKind map[ktypes.NamespaceKind]informers.SharedInformerFactory
 }
 
-func (i *informerClient) Get(nsKind ktypes.NamespaceKind, name string) (metav1.Object, error) {
+func (i *informerClient) Get(nsKind ktypes.NamespaceKind, name string) (runtime.Object, error) {
 	fact := i.getFactory(nsKind)
 	if fact == nil {
 		return nil, except.NewError("No informer for %s is currently running", except.ErrNotFound, nsKind)
@@ -55,7 +53,7 @@ func (i *informerClient) Get(nsKind ktypes.NamespaceKind, name string) (metav1.O
 
 	switch nsKind.Kind {
 
-	case ktypes.KindDeploy:
+	case ktypes.KindDeployment:
 		return fact.Apps().V1().Deployments().Lister().Deployments(nsKind.Namespace).Get(name)
 	case ktypes.KindReplicaSet:
 		return fact.Apps().V1().ReplicaSets().Lister().ReplicaSets(nsKind.Namespace).Get(name)
@@ -67,19 +65,23 @@ func (i *informerClient) Get(nsKind ktypes.NamespaceKind, name string) (metav1.O
 		return fact.Core().V1().ConfigMaps().Lister().ConfigMaps(nsKind.Namespace).Get(name)
 	case ktypes.KindEndpoints:
 		return fact.Core().V1().Endpoints().Lister().Endpoints(nsKind.Namespace).Get(name)
+	case ktypes.KindStatefulSet:
+		return fact.Apps().V1().StatefulSets().Lister().StatefulSets(nsKind.Namespace).Get(name)
+	case ktypes.KindDaemonSet:
+		return fact.Apps().V1().DaemonSets().Lister().DaemonSets(nsKind.Namespace).Get(name)
 	}
 
 	return nil, except.NewError("Unsupported kind %s", except.ErrUnsupported, nsKind.Kind)
 }
 
-func (i *informerClient) List(nsKind ktypes.NamespaceKind, selector labels.Selector) (runtime.Object, error) {
+func (i *informerClient) List(nsKind ktypes.NamespaceKind, selector labels.Selector) (metav1.ListInterface, error) {
 	fact := i.getFactory(nsKind)
 	if fact == nil {
 		return nil, except.NewError("No informer for %s is currently running", except.ErrNotFound, nsKind)
 	}
 
 	switch nsKind.Kind {
-	case ktypes.KindDeploy:
+	case ktypes.KindDeployment:
 		list, err := fact.Apps().V1().Deployments().Lister().Deployments(nsKind.Namespace).List(selector)
 		if err != nil {
 			return nil, err
@@ -156,6 +158,30 @@ func (i *informerClient) List(nsKind ktypes.NamespaceKind, selector labels.Selec
 		}
 
 		return &corev1.EndpointsList{Items: items}, nil
+	case ktypes.KindStatefulSet:
+		list, err := fact.Apps().V1().StatefulSets().Lister().StatefulSets(nsKind.Namespace).List(selector)
+		if err != nil {
+			return nil, err
+		}
+
+		items := make([]appsv1.StatefulSet, len(list))
+		for i, v := range list {
+			items[i] = *v
+		}
+
+		return &appsv1.StatefulSetList{Items: items}, nil
+	case ktypes.KindDaemonSet:
+		list, err := fact.Apps().V1().DaemonSets().Lister().DaemonSets(nsKind.Namespace).List(selector)
+		if err != nil {
+			return nil, err
+		}
+
+		items := make([]appsv1.DaemonSet, len(list))
+		for i, v := range list {
+			items[i] = *v
+		}
+
+		return &appsv1.DaemonSetList{Items: items}, nil
 	}
 
 	return nil, except.NewError("Unsupported kind %s", except.ErrUnsupported, nsKind.Kind)
@@ -164,7 +190,10 @@ func (i *informerClient) List(nsKind ktypes.NamespaceKind, selector labels.Selec
 func (i *informerClient) Informing(nsKind ktypes.NamespaceKind) bool {
 	i.factoriesLock.RLock()
 	defer i.factoriesLock.RUnlock()
-	_, ok := i.informedNsKinds[nsKind]
+	_, ok := i.factoriesByNamespaceKind[ktypes.NamespaceKind{Kind: nsKind.Kind}]
+	if !ok {
+		_, ok = i.factoriesByNamespaceKind[nsKind]
+	}
 	return ok
 }
 
@@ -191,8 +220,7 @@ func (i *informerClient) Inform(ctx context.Context, spec kinformer.InformerSpec
 		return err
 	}
 	if spec.Filter != nil {
-		li := obj.(metav1.ListInterface)
-		objs := kubeutil.ObjectsFromList(li)
+		objs := kubeutil.ObjectsFromList(obj)
 		filteredObjs := make([]runtime.Object, 0, len(objs))
 		for _, o := range objs {
 			if v, ok := o.(metav1.Object); ok && spec.Filter(v) {
@@ -215,19 +243,29 @@ func (i *informerClient) Inform(ctx context.Context, spec kinformer.InformerSpec
 func (i *informerClient) lazyGetFactory(nsKind ktypes.NamespaceKind) informers.SharedInformerFactory {
 	i.factoriesLock.Lock()
 	defer i.factoriesLock.Unlock()
-	fact, ok := i.factoriesByNamespace[nsKind.Namespace]
+	fact, ok := i.factoriesByNamespaceKind[ktypes.NamespaceKind{Kind: nsKind.Kind}]
 	if !ok {
-		fact = informers.NewSharedInformerFactoryWithOptions(i.Client.Api(), 0, informers.WithNamespace(nsKind.Namespace))
-		i.factoriesByNamespace[nsKind.Namespace] = fact
+		fact, ok = i.factoriesByNamespaceKind[nsKind]
+		if !ok {
+			opts := make([]informers.SharedInformerOption, 0)
+			if nsKind.Namespace != "" {
+				opts = append(opts, informers.WithNamespace(nsKind.Namespace))
+			}
+			fact = informers.NewSharedInformerFactoryWithOptions(i.Client.Api(), 0, opts...)
+			i.factoriesByNamespaceKind[nsKind] = fact
+		}
 	}
-	i.informedNsKinds[nsKind] = struct{}{}
 	return fact
 }
 
 func (i *informerClient) getFactory(nsKind ktypes.NamespaceKind) informers.SharedInformerFactory {
 	i.factoriesLock.RLock()
 	defer i.factoriesLock.RUnlock()
-	return i.factoriesByNamespace[nsKind.Namespace]
+	fact, ok := i.factoriesByNamespaceKind[ktypes.NamespaceKind{Kind: nsKind.Kind}]
+	if ok {
+		return fact
+	}
+	return i.factoriesByNamespaceKind[nsKind]
 }
 
 func (i *informerClient) createHandlerQueue(ctx context.Context, spec kinformer.InformerSpec) kengine.HandlerQueue {
@@ -240,7 +278,7 @@ func (i *informerClient) informerForKind(kind ktypes.Kind, factory informers.Sha
 	switch kind {
 	case ktypes.KindConfigMap:
 		inf = factory.Core().V1().ConfigMaps().Informer()
-	case ktypes.KindDeploy:
+	case ktypes.KindDeployment:
 		inf = factory.Apps().V1().Deployments().Informer()
 	case ktypes.KindPod:
 		inf = factory.Core().V1().Pods().Informer()
@@ -250,6 +288,10 @@ func (i *informerClient) informerForKind(kind ktypes.Kind, factory informers.Sha
 		inf = factory.Core().V1().Services().Informer()
 	case ktypes.KindEndpoints:
 		inf = factory.Core().V1().Endpoints().Informer()
+	case ktypes.KindDaemonSet:
+		inf = factory.Apps().V1().DaemonSets().Informer()
+	case ktypes.KindStatefulSet:
+		inf = factory.Apps().V1().StatefulSets().Informer()
 	}
 	if inf == nil {
 		err = except.NewError("Kind %s not supported", except.ErrUnsupported, kind)

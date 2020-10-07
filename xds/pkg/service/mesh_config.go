@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/google/uuid"
 	"github.com/kage-cloud/kage/xds/pkg/config"
+	"github.com/kage-cloud/kage/xds/pkg/meta"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
@@ -18,12 +19,40 @@ type MeshConfigService interface {
 	Create(spec *model.MeshConfigSpec) (*model.MeshConfig, error)
 	Get(kageMeshDeploy *appsv1.Deployment) (*model.MeshConfig, error)
 	BaselineConfig(meshConfig *model.MeshConfig) ([]byte, error)
+	FromXdsConfig(xdsAnno *meta.XdsConfig) ([]byte, error)
 }
 
 type meshConfigService struct {
 	Config            *config.Config    `inject:"Config"`
 	StoreClient       snap.StoreClient  `inject:"StoreClient"`
 	EnvoyStateService EnvoyStateService `inject:"EnvoyStateService"`
+}
+
+func (m *meshConfigService) FromXdsConfig(xdsAnno *meta.XdsConfig) ([]byte, error) {
+	tmpl := template.New("")
+
+	t, err := tmpl.Parse(consts.BaselineConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+
+	baseline := model.Baseline{
+		NodeId:             xdsAnno.NodeId,
+		NodeCluster:        xdsAnno.Source.ClusterName,
+		XdsAddress:         m.Config.Xds.Address,
+		XdsPort:            m.Config.Xds.Port,
+		AdminPort:          m.Config.Xds.AdminPort,
+		ServiceClusterName: xdsAnno.Source.ClusterName,
+		CanaryClusterName:  xdsAnno.Canary.ClusterName,
+	}
+
+	if err := t.Execute(buf, baseline); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func (m *meshConfigService) BaselineConfig(meshConfig *model.MeshConfig) ([]byte, error) {

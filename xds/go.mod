@@ -6,16 +6,18 @@ require (
 	github.com/cncf/udpa/go v0.0.0-20200909154343-1f710aca26a9 // indirect
 	github.com/eddieowens/axon v0.6.0
 	github.com/envoyproxy/go-control-plane v0.9.6
+	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.4.2
 	github.com/google/uuid v1.1.1
+	github.com/kage-cloud/kage/annos v0.0.0-00010101000000-000000000000
 	github.com/kage-cloud/kage/core v0.0.0-00010101000000-000000000000
 	github.com/labstack/echo/v4 v4.1.15
 	github.com/opencontainers/runc v0.1.1
 	github.com/rancher/k3d/v3 v3.0.1
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/viper v1.6.2
-	github.com/stretchr/testify v1.5.1
+	github.com/stretchr/testify v1.6.1
 	google.golang.org/grpc v1.29.1
 	gopkg.in/yaml.v2 v2.2.8
 	k8s.io/api v0.17.0
@@ -25,3 +27,5 @@ require (
 )
 
 replace github.com/kage-cloud/kage/core => ../core
+
+replace github.com/kage-cloud/kage/annos => ../annos

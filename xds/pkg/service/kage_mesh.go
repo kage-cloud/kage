@@ -1,11 +1,16 @@
 package service
 
 import (
+	"context"
+	"fmt"
+	"github.com/google/uuid"
 	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
+	"github.com/kage-cloud/kage/core/kube/ktypes"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
+	"github.com/kage-cloud/kage/xds/pkg/meta"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/model/xds"
@@ -14,8 +19,12 @@ import (
 	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	"strings"
 	"time"
 )
 
@@ -24,6 +33,7 @@ const KageMeshServiceKey = "KageMeshService"
 type KageMeshService interface {
 	Fetch(canaryName string, opt kconfig.Opt) (*model.KageMesh, error)
 	Create(spec *model.KageMeshSpec) (*model.KageMesh, error)
+	CreateOrGet(canary *meta.Canary) (*meta.Xds, error)
 	DeleteFromDeploy(kageMeshDeploy *appsv1.Deployment) error
 	Delete(spec *model.DeleteKageMeshSpec) error
 }
@@ -36,6 +46,99 @@ type kageMeshService struct {
 	EndpointsControllerService EndpointsControllerService `inject:"EndpointsControllerService"`
 	MeshConfigService          MeshConfigService          `inject:"MeshConfigService"`
 	WatchService               WatchService               `inject:"WatchService"`
+	LockdownService            LockdownService            `inject:"LockdownService"`
+	EnvoyEndpointsService      EnvoyEndpointsService      `inject:"EnvoyEndpointsService"`
+	InformerClient             kube.InformerClient        `inject:"InformerClient"`
+}
+
+func (k *kageMeshService) CreateOrGet(canary *meta.Canary) (*meta.Xds, error) {
+	kageMeshName := k.genKageMeshName(canary)
+	opt := kconfig.Opt{Namespace: canary.Source.Namespace}
+	kageMeshDeploy, err := k.KubeReaderService.GetDeploy(kageMeshName, opt)
+	if errors.IsNotFound(err) {
+
+	}
+}
+
+func (k *kageMeshService) createKageMeshDeploy(name string, canary *meta.Canary, opt kconfig.Opt) (*appsv1.Deployment, *meta.XdsConfig, error) {
+	xdsAnno := &meta.XdsConfig{
+		NodeId: uuid.New().String(),
+		Canary: meta.EnvoyConfig{
+			ClusterName: "canary",
+		},
+		Source: meta.EnvoyConfig{
+			ClusterName: "source",
+		},
+	}
+
+	baseline, err := k.MeshConfigService.FromXdsConfig(xdsAnno)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cm := k.KageMeshFactory.BaselineConfigMap(name, baseline)
+
+	dep := k.KageMeshFactory.Deploy(name)
+
+	depObj, err := k.KubeClient.Create(dep, opt)
+	if err != nil {
+		return nil, nil, err
+	}
+}
+
+func (k *kageMeshService) genKageMeshName(canary *meta.Canary) string {
+	return strings.ToLower(fmt.Sprintf("%s-%s-kage-mesh", canary.Source.Name, canary.Source.Kind))
+}
+
+func (k *kageMeshService) Deploy(ctx context.Context, source metav1.Object, xdsAnno *meta.Xds) error {
+	opt := kconfig.Opt{Namespace: source.GetNamespace()}
+
+	baseline, err := k.MeshConfigService.FromXdsConfig(xdsAnno)
+	if err != nil {
+		return err
+	}
+
+	cm := k.KageMeshFactory.BaselineConfigMap(xdsAnno.Config.MeshName, baseline)
+
+	dep := k.KageMeshFactory.Deploy(xdsAnno.Config.MeshName)
+
+	depObj, err := k.KubeClient.Create(dep, opt)
+	if err != nil {
+		return err
+	}
+
+	dep = depObj.(*appsv1.Deployment)
+
+	informerSpec := kinformer.InformerSpec{
+		NamespaceKind: ktypes.NamespaceKind{Namespace: source.GetNamespace(), Kind: ktypes.KindService},
+		BatchDuration: 5 * time.Second,
+		Filter: func(object metav1.Object) bool {
+			baseObj := object.(runtime.Object)
+			svcSelector := ktypes.GetLabelSelector(baseObj)
+			if svcSelector == nil {
+				return false
+			}
+
+			return svcSelector.Matches(labels.Set(source.GetLabels()))
+		},
+		Handlers: []kinformer.InformEventHandler{
+			&kinformer.InformEventHandlerFuncs{
+				OnWatch: nil,
+				OnList: func(li metav1.ListInterface) error {
+					svcs := li.(*corev1.ServiceList)
+
+					for _, v := range svcs.Items {
+						k.KubeReaderService.ListPods()
+						if err := k.LockdownService.LockdownService2(&v, dep); err != nil {
+							return err
+						}
+
+					}
+				},
+			},
+		},
+	}
+	k.InformerClient.Inform(ctx)
 }
 
 func (k *kageMeshService) Delete(spec *model.DeleteKageMeshSpec) error {

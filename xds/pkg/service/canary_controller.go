@@ -26,7 +26,7 @@ func (c *canaryControllerService) Create(req *exchange.CreateCanaryRequest) (*ex
 
 	spec := &model.KageSpec{
 		Opt:                     opt,
-		TargetDeployName:        req.Name,
+		TargetControllerName:    req.Name,
 		CanaryRoutingPercentage: req.CanaryRoutingPercentage,
 	}
 

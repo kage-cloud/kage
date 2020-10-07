@@ -17,7 +17,7 @@ func ToMap(domain string, anno interface{}) map[string]string {
 	v := reflect.ValueOf(anno)
 	fields := getFieldsByJsonName(v)
 
-	toMapRecurse(domain, fields, m)
+	toMapRecurse(domain, "", fields, m)
 
 	return m
 }
@@ -36,12 +36,14 @@ func FromMap(domain string, m map[string]string, a interface{}) error {
 			continue
 		}
 
-		spl := strings.Split(k, "/")
-		if len(spl) <= 1 {
+		keyPath := strings.TrimPrefix(k, domain+"/")
+
+		spl := strings.Split(keyPath, "/")
+		if len(spl) == 0 {
 			continue
 		}
 
-		if err := setFieldFromAnnoStr(spl[1:], ele, v); err != nil {
+		if err := setFieldFromAnnoStr(spl, ele, v); err != nil {
 			return fmt.Errorf("failed to read %s: %s", k, err.Error())
 		}
 	}

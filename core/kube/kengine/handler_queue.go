@@ -2,7 +2,7 @@ package kengine
 
 import (
 	"context"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/util/workqueue"
 )

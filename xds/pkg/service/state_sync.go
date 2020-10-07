@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"github.com/kage-cloud/kage/core/kube"
+	"github.com/kage-cloud/kage/core/kube/kfilter"
+	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kfilter"
-	"github.com/kage-cloud/kage/core/kube/kubeutil/kinformer"
 	"github.com/kage-cloud/kage/xds/pkg/config"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
@@ -37,7 +37,7 @@ func (c *stateSyncService) Start() error {
 	spec := kinformer.InformerSpec{
 		NamespaceKind: ktypes.NewNamespaceKind(c.Config.Kube.Namespace, ktypes.KindConfigMap),
 		BatchDuration: 1 * time.Second,
-		Filter:        kfilter.SelectedObjectFilter(selector),
+		Filter:        kfilter.LabelSelectorFilter(selector),
 		Handlers: []kinformer.InformEventHandler{
 			&kinformer.InformEventHandlerFuncs{
 				OnWatch: func(event watch.Event) error {

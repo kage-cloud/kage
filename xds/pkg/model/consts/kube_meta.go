@@ -1,7 +1,8 @@
 package consts
 
 const (
-	Domain                     = "cloud.kage"
+	Domain                     = "kage.cloud"
+	CanaryDomain               = "canary." + Domain
 	LabelValueResourceSnapshot = "snapshot"
 	LabelValueResourceKageMesh = "mesh"
 	LabelValueResourceCanary   = "canary"
@@ -17,5 +18,5 @@ const (
 
 const (
 	AnnotationKeyLockdown = Domain + "/lockdown"
-	AnnotationKageMesh    = Domain + "/kage-mesh"
+	AnnotationMeshConfig  = Domain + "/mesh-config"
 )

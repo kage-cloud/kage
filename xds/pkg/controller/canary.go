@@ -54,7 +54,7 @@ func (c *canaryController) Delete(ctx echo.Context) error {
 func (c *canaryController) Routes() []Route {
 	return []Route{
 		{
-			Path:    "/:namespace",
+			Path:    "/:namespace/:name",
 			Method:  http.MethodPost,
 			Handler: c.Create,
 		},

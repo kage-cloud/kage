@@ -603,7 +603,7 @@ func (a *AnnosTestSuite) TestFromMapNil() {
 	a.EqualError(err, "the annotation struct must not be nil")
 }
 
-func (a *AnnosTestSuite) TestFromMapAllMatches() {
+func (a *AnnosTestSuite) TestFromMapNoDomain() {
 	// -- Given
 	//
 	actual := new(Bools)
@@ -611,11 +611,8 @@ func (a *AnnosTestSuite) TestFromMapAllMatches() {
 		Bool: true,
 	}
 
-	f := false
-	expected.BoolPtr = &f
-
 	given := map[string]string{
-		"canary.kage.cloud/bool":     "true",
+		"bool":                       "true",
 		"canary.kage.cloud/bool_ptr": "false",
 	}
 
@@ -818,6 +815,61 @@ func (a *AnnosTestSuite) TestFromMapNonStructPtr() {
 	a.EqualError(err, "the annotation must be a ptr to a struct")
 }
 
+func (a *AnnosTestSuite) TestToMapEmbedded() {
+	// -- Given
+	//
+	given := Embeded{
+		Strings: Strings{
+			String: "str1",
+		},
+		StringOuter: "str",
+	}
+	s := "ptr"
+	given.StringPtr = &s
+	expected := map[string]string{
+		"StringOuter": "str",
+		"string":      "str1",
+		"string_ptr":  "ptr",
+	}
+
+	// -- When
+	//
+	actual := ToMap("", given)
+
+	// -- Then
+	//
+	a.Equal(expected, actual)
+}
+
+func (a *AnnosTestSuite) TestFromMapEmbedded() {
+	// -- Given
+	//
+	expected := &Embeded{
+		Strings: Strings{
+			String: "str1",
+		},
+		StringOuter: "str",
+	}
+	s := "ptr"
+	expected.StringPtr = &s
+	actual := new(Embeded)
+	given := map[string]string{
+		"StringOuter": "str",
+		"string":      "str1",
+		"string_ptr":  "ptr",
+	}
+
+	// -- When
+	//
+	err := FromMap("", given, actual)
+
+	// -- Then
+	//
+	if a.NoError(err) {
+		a.Equal(expected, actual)
+	}
+}
+
 type Ints struct {
 	Int       int     `json:"int"`
 	Int8      int8    `json:"int_8"`
@@ -884,6 +936,11 @@ type Nested struct {
 type SubNested struct {
 	Slices Slices `json:"slices"`
 	hidden bool   `json:"hidden"`
+}
+
+type Embeded struct {
+	Strings
+	StringOuter string
 }
 
 func TestAnnosTestSuite(t *testing.T) {

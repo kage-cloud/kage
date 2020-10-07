@@ -22,6 +22,7 @@ const LockdownServiceKey = "LockdownService"
 type LockdownService interface {
 	// Removes the selector from the service stopping it from editing the endpoints file.
 	LockdownService(svc *corev1.Service, opt kconfig.Opt) error
+	LockdownService2(source *corev1.Service, target metav1.Object) error
 
 	// Re-adds the removed selector to the service allowing it to go back to editing the endpoints file.
 	ReleaseService(svc *corev1.Service, opt kconfig.Opt) error
@@ -41,6 +42,34 @@ type lockdownService struct {
 	WatchService      WatchService      `inject:"WatchService"`
 	selectorsByDeploy map[string]labels.Set
 	lock              sync.RWMutex
+}
+
+func (l *lockdownService) LockdownService2(source *corev1.Service, target metav1.Object) error {
+	opt := kconfig.Opt{Namespace: source.Namespace}
+
+	if l.IsLockedDown(source) {
+		return nil
+	}
+	if source.Spec.Selector == nil {
+		log.WithField("service", source.Name).
+			WithField("namespace", source.Namespace).
+			Debug("Service has no selector. Skipping lockdown")
+		return nil
+	}
+
+	lockdown := &model.Lockdown{DeletedSelector: source.Spec.Selector}
+
+	source.Spec.Selector = nil
+
+	l.saveLockdownMeta(source, lockdown)
+
+	if _, err := l.KubeClient.UpdateService(source, opt); err != nil {
+		return err
+	}
+
+	log.WithField("name", source.Name).WithField("namespace", source.Namespace).Debug("Locked down service.")
+
+	return nil
 }
 
 func (l *lockdownService) GetSelector(svc *corev1.Service) (labels.Selector, error) {
