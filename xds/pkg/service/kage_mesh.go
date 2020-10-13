@@ -263,14 +263,10 @@ func (k *kageMeshService) addService(svc *corev1.Service) error {
 				continue
 			}
 
-			_ = k.EnvoyEndpointsService.StorePod(controllerType, xdsAnno, pod)
-
 			logrus.WithField("name", svc.Name).
 				WithField("namespace", svc.Namespace).
-				Debug("Service routes to pod under a kage proxy. Locking it down.")
-			if err := k.ProxyService.ProxyService(svc, meta.ToMap(&xdsAnno.Config.XdsId)); err != nil {
-				return err
-			}
+				Debug("Service routes to pod under a kage proxy.")
+			_ = k.EnvoyEndpointsService.StorePod(controllerType, xdsAnno, pod)
 
 			if xdsAnno.ProxiedServices == nil {
 				xdsAnno.ProxiedServices = map[string]bool{}
@@ -285,14 +281,12 @@ func (k *kageMeshService) addService(svc *corev1.Service) error {
 					WithField("name", mesh.Name).
 					WithField("namespace", mesh.Namespace).
 					WithField("service", svc.Name).
-					Error("Failed to update mesh. Undoing service proxy.")
-				if err := k.removeForService(svc, opt); err != nil {
-					logrus.WithError(err).
-						WithField("name", svc.Name).
-						WithField("namespace", svc.Namespace).
-						Error("Failed to unlock service.")
-					continue
-				}
+					Error("Failed to update mesh for service.")
+				continue
+			}
+
+			if err := k.ProxyService.ProxyService(svc, meta.ToMap(&xdsAnno.Config.XdsId)); err != nil {
+				return err
 			}
 		}
 	}
