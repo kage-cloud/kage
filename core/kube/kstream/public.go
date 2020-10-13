@@ -2,11 +2,9 @@ package kstream
 
 import (
 	"github.com/kage-cloud/kage/core/kube/kfilter"
-	"github.com/kage-cloud/kage/core/kube/ktypes"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -86,18 +84,8 @@ func StreamFromList(li metav1.ListInterface) Streamer {
 
 type Streamer interface {
 	IsController() bool
-
 	First() runtime.Object
-
-	Objects() []runtime.Object
-
-	MetaObjects() []metav1.Object
-
-	ListInterface() metav1.ListInterface
-
-	// If the underlying object's type has a LabelSelector, return them. If the object is a Pod, a Selector which matches
-	// that Pod is returned.
-	LabelSelectors() []labels.Selector
+	Collect() Collector
 	ForEach(forEachFunc ForEachFunc) Streamer
 	Filter(filter kfilter.Filter) Streamer
 	Map(mapper MapFunc) Streamer
@@ -110,20 +98,8 @@ type streamer struct {
 	objs         []runtime.Object
 }
 
-func (s *streamer) MetaObjects() []metav1.Object {
-	metaObjs := make([]metav1.Object, 0, len(s.objs))
-
-	for _, obj := range s.objs {
-		if v, ok := obj.(metav1.Object); ok {
-			metaObjs = append(metaObjs, v)
-		}
-	}
-
-	return metaObjs
-}
-
-func (s *streamer) ListInterface() metav1.ListInterface {
-	return ktypes.SetObjects(s.li, s.objs)
+func (s *streamer) Collect() Collector {
+	return &collector{Streamer: s}
 }
 
 func (s *streamer) Filter(filter kfilter.Filter) Streamer {
@@ -149,22 +125,6 @@ func (s *streamer) First() runtime.Object {
 	} else {
 		return nil
 	}
-}
-
-func (s *streamer) LabelSelectors() []labels.Selector {
-	selectors := make([]labels.Selector, 0, len(s.objs))
-
-	for _, v := range s.objs {
-		if v, ok := v.(*corev1.Pod); ok && v.Labels != nil {
-			selectors = append(selectors, labels.SelectorFromValidatedSet(v.Labels))
-			continue
-		}
-		ls := ktypes.GetLabelSelector(v)
-		if ls != nil {
-			selectors = append(selectors, ls)
-		}
-	}
-	return selectors
 }
 
 func (s *streamer) Len() int {

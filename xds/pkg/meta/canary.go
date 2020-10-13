@@ -1,7 +1,8 @@
 package meta
 
 type Canary struct {
-	Source            ObjRef `json:"source"`
+	SourceObj         ObjRef `json:"source_obj"`
+	CanaryObj         ObjRef `json:"canary_obj"`
 	RoutingPercentage uint32 `json:"routing_percentage"`
 }
 

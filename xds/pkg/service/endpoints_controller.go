@@ -27,7 +27,7 @@ type EndpointsControllerService interface {
 }
 
 type endpointsControllerService struct {
-	LockdownService   LockdownService   `inject:"LockdownService"`
+	LockdownService   ProxyService      `inject:"ProxyService"`
 	WatchService      WatchService      `inject:"WatchService"`
 	XdsService        XdsService        `inject:"XdsService"`
 	KubeReaderService KubeReaderService `inject:"KubeReaderService"`
@@ -118,7 +118,7 @@ func (e *endpointsControllerService) StartForDeploys(ctx context.Context, blackl
 				}
 				selectors = append(selectors, sel)
 
-				if err := e.LockdownService.LockdownService(&s, opt); err != nil {
+				if err := e.LockdownService.ProxyService(&s, nil); err != nil {
 					return err
 				}
 			}

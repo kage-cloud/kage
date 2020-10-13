@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"github.com/kage-cloud/kage/xds/pkg/meta"
 	"github.com/kage-cloud/kage/xds/pkg/model/consts"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,7 +13,7 @@ import (
 const KageMeshFactoryKey = "KageMeshFactory"
 
 type KageMeshFactory interface {
-	Deploy(name string) *appsv1.Deployment
+	Deploy(name string, xdsAnno *meta.XdsConfig) *appsv1.Deployment
 	BaselineConfigMap(name string, content []byte) *corev1.ConfigMap
 }
 
@@ -30,19 +31,21 @@ func (k *kageMeshFactory) BaselineConfigMap(name string, content []byte) *corev1
 	}
 }
 
-func (k *kageMeshFactory) Deploy(name string) *appsv1.Deployment {
-	selectedLabels := map[string]string{"app": name}
+func (k *kageMeshFactory) Deploy(name string, xdsAnno *meta.XdsConfig) *appsv1.Deployment {
+	labels := meta.ToMap(&xdsAnno.XdsId)
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
+			Name:        name,
+			Annotations: meta.ToMap(xdsAnno),
+			Labels:      labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{MatchLabels: selectedLabels},
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Replicas: pointer.Int32Ptr(1),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: selectedLabels,
+					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{

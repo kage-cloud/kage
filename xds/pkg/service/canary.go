@@ -2,90 +2,53 @@ package service
 
 import (
 	"github.com/kage-cloud/kage/core/kube"
-	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/xds/pkg/factory"
-	"github.com/kage-cloud/kage/xds/pkg/model"
-	"github.com/kage-cloud/kage/xds/pkg/snap/snaputil"
-	"github.com/kage-cloud/kage/xds/pkg/util/canaryutil"
-	log "github.com/sirupsen/logrus"
-	"time"
+	"github.com/kage-cloud/kage/core/kube/ktypes"
+	"github.com/kage-cloud/kage/xds/pkg/meta"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const CanaryServiceKey = "CanaryService"
 
 type CanaryService interface {
-	Create(spec *model.CreateCanarySpec) (*model.Canary, error)
-	Delete(spec *model.DeleteCanarySpec) error
-	Get(name string, opt kconfig.Opt) (*model.Canary, error)
+	FetchForPod(pod *corev1.Pod) *meta.Canary
 }
 
 type canaryService struct {
-	KubeReaderService KubeReaderService     `inject:"KubeReaderService"`
-	KubeClient        kube.Client           `inject:"KubeClient"`
-	CanaryFactory     factory.CanaryFactory `inject:"CanaryFactory"`
+	KubeReaderService KubeReaderService `inject:"KubeReaderService"`
+	KubeClient        kube.Client       `inject:"KubeClient"`
 }
 
-func (c *canaryService) Get(name string, opt kconfig.Opt) (*model.Canary, error) {
-	dep, err := c.KubeReaderService.GetDeploy(name, opt)
-	if err != nil {
-		return nil, err
-	}
-
-	targetName, err := canaryutil.TargetNameFromLabels(dep.Labels)
-	if err != nil {
-		return nil, err
-	}
-
-	targetDeploy, err := c.KubeReaderService.GetDeploy(targetName, opt)
-	if err != nil {
-		return nil, err
-	}
-
-	return &model.Canary{
-		Name:                name,
-		TargetDeploy:        targetDeploy,
-		CanaryDeploy:        dep,
-		CanaryRoutingWeight: 0,
-		TotalRoutingWeight:  model.TotalRoutingWeight,
-	}, nil
+func (c *canaryService) FetchForPod(pod *corev1.Pod) *meta.Canary {
+	return c.getCanaryAnnoForPod(pod)
 }
 
-func (c *canaryService) Delete(spec *model.DeleteCanarySpec) error {
-	if err := c.KubeClient.DeleteDeploy(spec.CanaryDeployName, spec.Opt); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *canaryService) Create(spec *model.CreateCanarySpec) (*model.Canary, error) {
-	replicas := int32(1)
-	if spec.TargetDeploy.Spec.Replicas != nil {
-		replicas = *spec.TargetDeploy.Spec.Replicas
-	}
-
-	canaryReplicas := canaryutil.DeriveReplicaCountFromTraffic(replicas, spec.TrafficPercentage)
-
-	name := snaputil.GenCanaryClusterName(spec.TargetDeploy.Name)
-
-	canary := c.CanaryFactory.FromDeployment(name, spec.TargetDeploy, canaryReplicas)
-
-	dep, err := c.KubeClient.CreateDeploy(canary, spec.Opt)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.KubeClient.WaitTillDeployReady(dep.Name, time.Second*30, spec.Opt); err != nil {
-		if err = c.KubeClient.DeleteDeploy(dep.Name, spec.Opt); err != nil {
-			log.WithField("name", dep.Name).WithError(err).Error("Failed to clean up canary")
+func (c *canaryService) getCanaryAnnoForPod(pod *corev1.Pod) *meta.Canary {
+	var canaryAnno *meta.Canary
+	_ = c.KubeReaderService.WalkControllers(pod, func(controller runtime.Object) (bool, error) {
+		metaObj, ok := controller.(metav1.Object)
+		if !ok {
+			return true, nil
 		}
-		return nil, err
-	}
+		annos := metaObj.GetAnnotations()
 
-	return &model.Canary{
-		Name:                name,
-		TargetDeploy:        spec.TargetDeploy,
-		CanaryDeploy:        dep,
-		CanaryRoutingWeight: spec.TrafficPercentage,
-		TotalRoutingWeight:  model.TotalRoutingWeight,
-	}, nil
+		if err := meta.FromMap(annos, canaryAnno); err != nil {
+			return true, nil
+		}
+
+		if canaryAnno.SourceObj.Name != "" {
+			return false, nil
+		}
+
+		canaryAnno.CanaryObj = meta.ObjRef{
+			Name:      metaObj.GetName(),
+			Kind:      string(ktypes.KindFromObject(controller)),
+			Namespace: metaObj.GetNamespace(),
+		}
+
+		return true, nil
+	})
+
+	return canaryAnno
 }

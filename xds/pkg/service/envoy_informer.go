@@ -33,7 +33,7 @@ func (e *envoyInformerService) GetOrInitXds(canary metav1.Object) (*meta.Xds, er
 
 func (e *envoyInformerService) storePods(pods []corev1.Pod, xdsAnno *meta.Xds, controllerType meta.ControllerType) error {
 	for _, v := range pods {
-		if err := e.EnvoyEndpointsService.StorePod(xdsAnno, controllerType, &v); err != nil {
+		if err := e.EnvoyEndpointsService.StorePod(controllerType, xdsAnno, &v); err != nil {
 			log.WithField("namespace", v.Namespace).
 				WithField("name", v.Name).
 				Error("Failed to add pod to mesh endpoints.")
@@ -59,7 +59,7 @@ func (e *envoyInformerService) getOrInitXdsAnno(canary metav1.Object, opt kconfi
 		return nil, nil, except.NewError("canary has unexpected annotation structure: %s", except.ErrInvalid, err.Error())
 	}
 
-	sourceAnno := canaryAnno.Source
+	sourceAnno := canaryAnno.SourceObj
 	sourceKind := ktypes.Kind(sourceAnno.Kind)
 	if !ktypes.IsController(sourceKind) {
 		return nil, nil, except.NewError("the source is not a supported pod controller e.g. Deployment", except.ErrUnsupported)
@@ -81,7 +81,7 @@ func (e *envoyInformerService) getOrInitXdsAnno(canary metav1.Object, opt kconfi
 	}
 
 	if xdsAnno.Config.NodeId == "" {
-		e.instantiateXdsConfig(canaryAnno.Source.Name, xdsAnno)
+		e.instantiateXdsConfig(canaryAnno.SourceObj.Name, xdsAnno)
 		controllerAnnos = meta.Merge(controllerAnnos, xdsAnno)
 		controllerAnnos = meta.Merge(controllerAnnos, &meta.XdsMarker{Type: meta.CanaryControllerType})
 

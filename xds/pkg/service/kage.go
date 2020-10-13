@@ -82,7 +82,7 @@ func (k *kageService) Create(spec *model.KageSpec) (*model.Kage, error) {
 
 	k.Map.Add(canary.Name, cancel)
 
-	kageMesh, err := k.KageMeshService.Create(kageMeshSpec)
+	kageMesh, err := k.KageMeshService.CreateFromCanary(kageMeshSpec)
 	if err != nil {
 		return nil, err
 	}

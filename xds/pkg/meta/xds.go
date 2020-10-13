@@ -7,28 +7,42 @@ const (
 	CanaryControllerType ControllerType = "canary"
 )
 
-type MeshMarkerLabel struct {
+type MeshMarker struct {
 	IsMesh bool `json:"is_mesh"`
 }
 
-func (m *MeshMarkerLabel) GetDomain() string {
+func (m *MeshMarker) GetDomain() string {
 	return DomainXds
 }
 
 type Xds struct {
-	Name          string            `json:"name"`
-	LabelSelector map[string]string `json:"label_selector"`
-	Config        XdsConfig         `json:"config"`
+	Name            string            `json:"name"`
+	LabelSelector   map[string]string `json:"label_selector"`
+	Canary          Canary            `json:"canary"`
+	Config          XdsConfig         `json:"config"`
+	ProxiedServices map[string]bool   `json:"proxied_services"`
 }
 
 func (x *Xds) GetDomain() string {
 	return DomainXds
 }
 
+type XdsId struct {
+	NodeId string `json:"node_id"`
+}
+
+func (x *XdsId) GetDomain() string {
+	return DomainXds
+}
+
 type XdsConfig struct {
-	NodeId string      `json:"node_id"`
+	XdsId
 	Canary EnvoyConfig `json:"canary"`
 	Source EnvoyConfig `json:"source"`
+}
+
+func (x *XdsConfig) GetDomain() string {
+	return DomainXds
 }
 
 type EnvoyConfig struct {

@@ -39,7 +39,7 @@ type envoyEndpointController struct {
 	StoreClient       snap.StoreClient        `inject:"StoreClient"`
 	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
 	WatchService      WatchService            `inject:"WatchService"`
-	LockdownService   LockdownService         `inject:"LockdownService"`
+	LockdownService   ProxyService            `inject:"ProxyService"`
 }
 
 func (e *envoyEndpointController) StartAsync(ctx context.Context, spec *envoyepctlr.Spec) error {
@@ -49,7 +49,7 @@ func (e *envoyEndpointController) StartAsync(ctx context.Context, spec *envoyepc
 	}
 
 	return e.WatchService.Services(ctx, func(object metav1.Object) bool {
-		return e.LockdownService.IsLockedDown(object)
+		return e.LockdownService.IsProxied(object)
 	}, 3*time.Second, spec.Opt)
 }
 

@@ -1,9 +1,9 @@
 package meta
 
-type Kage struct {
+type CanaryMarker struct {
 	Canary bool `json:"canary"`
 }
 
-func (k *Kage) GetDomain() string {
+func (k *CanaryMarker) GetDomain() string {
 	return DomainBase
 }

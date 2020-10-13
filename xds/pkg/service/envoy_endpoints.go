@@ -31,7 +31,7 @@ type EnvoyEndpointsService interface {
 
 type envoyEndpointsService struct {
 	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
-	LockdownService   LockdownService         `inject:"LockdownService"`
+	LockdownService   ProxyService            `inject:"ProxyService"`
 	EndpointFactory   factory.EndpointFactory `inject:"EndpointFactory"`
 	ListenerFactory   factory.ListenerFactory `inject:"ListenerFactory"`
 	StoreClient       snap.StoreClient        `inject:"StoreClient"`

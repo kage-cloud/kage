@@ -1,18 +1,18 @@
 package meta
 
-func ProxyDomain(svcName string) string {
-	return svcName + "." + DomainXds
+type Proxy struct {
+	ProxyMarker
+	DeletedSelector map[string]string `json:"deleted_selector"`
 }
 
-type ServiceProxy struct {
-	Name     string            `json:"name"`
-	Selector map[string]string `json:"selector"`
+func (l *Proxy) GetDomain() string {
+	return DomainXds
 }
 
-type ProxiedService struct {
-	Selector map[string]string `json:"selector"`
+type ProxyMarker struct {
+	Proxied bool `json:"proxied"`
 }
 
-func (p *ProxiedService) GetDomain() string {
+func (l *ProxyMarker) GetDomain() string {
 	return DomainXds
 }
