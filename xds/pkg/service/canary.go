@@ -13,11 +13,26 @@ const CanaryServiceKey = "CanaryService"
 
 type CanaryService interface {
 	FetchForPod(pod *corev1.Pod) *meta.Canary
+	FetchForController(obj runtime.Object) *meta.Canary
 }
 
 type canaryService struct {
 	KubeReaderService KubeReaderService `inject:"KubeReaderService"`
 	KubeClient        kube.Client       `inject:"KubeClient"`
+}
+
+func (c *canaryService) FetchForController(obj runtime.Object) *meta.Canary {
+	metaObj, ok := obj.(metav1.Object)
+	if !ok {
+		return nil
+	}
+
+	canary, err := c.unmarshalAnno(metaObj)
+	if err != nil {
+		return nil
+	}
+
+	return canary
 }
 
 func (c *canaryService) FetchForPod(pod *corev1.Pod) *meta.Canary {
@@ -26,14 +41,15 @@ func (c *canaryService) FetchForPod(pod *corev1.Pod) *meta.Canary {
 
 func (c *canaryService) getCanaryAnnoForPod(pod *corev1.Pod) *meta.Canary {
 	var canaryAnno *meta.Canary
+	var err error
 	_ = c.KubeReaderService.WalkControllers(pod, func(controller runtime.Object) (bool, error) {
 		metaObj, ok := controller.(metav1.Object)
 		if !ok {
 			return true, nil
 		}
-		annos := metaObj.GetAnnotations()
 
-		if err := meta.FromMap(annos, canaryAnno); err != nil {
+		canaryAnno, err = c.unmarshalAnno(metaObj)
+		if err != nil {
 			return true, nil
 		}
 
@@ -41,14 +57,23 @@ func (c *canaryService) getCanaryAnnoForPod(pod *corev1.Pod) *meta.Canary {
 			return false, nil
 		}
 
-		canaryAnno.CanaryObj = meta.ObjRef{
-			Name:      metaObj.GetName(),
-			Kind:      string(ktypes.KindFromObject(controller)),
-			Namespace: metaObj.GetNamespace(),
-		}
-
 		return true, nil
 	})
 
 	return canaryAnno
+}
+
+func (c *canaryService) unmarshalAnno(metaObj metav1.Object) (*meta.Canary, error) {
+	canaryAnno := new(meta.Canary)
+	if err := meta.FromMap(metaObj.GetAnnotations(), canaryAnno); err != nil {
+		return nil, err
+	}
+
+	canaryAnno.CanaryObj = meta.ObjRef{
+		Name:      metaObj.GetName(),
+		Kind:      string(ktypes.KindFromObject(metaObj.(runtime.Object))),
+		Namespace: metaObj.GetNamespace(),
+	}
+
+	return canaryAnno, nil
 }

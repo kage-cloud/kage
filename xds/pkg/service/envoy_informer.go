@@ -20,9 +20,9 @@ type EnvoyInformerService interface {
 }
 
 type envoyInformerService struct {
-	EnvoyEndpointsService EnvoyEndpointsService `inject:"EnvoyEndpointsService"`
-	KubeReaderService     KubeReaderService     `inject:"KubeReaderService"`
-	KubeClient            kube.Client           `inject:"KubeClient"`
+	EnvoyEndpointsService CanaryEndpointsService `inject:"CanaryEndpointsService"`
+	KubeReaderService     KubeReaderService      `inject:"KubeReaderService"`
+	KubeClient            kube.Client            `inject:"KubeClient"`
 }
 
 func (e *envoyInformerService) GetOrInitXds(canary metav1.Object) (*meta.Xds, error) {
@@ -43,7 +43,7 @@ func (e *envoyInformerService) storePods(pods []corev1.Pod, xdsAnno *meta.Xds, c
 }
 
 func (e *envoyInformerService) listControllersPods(controller runtime.Object, opt kconfig.Opt) ([]corev1.Pod, error) {
-	selector := ktypes.GetLabelSelector(controller)
+	selector := ktypes.PodSelectorAsSelector(controller)
 
 	return e.KubeReaderService.ListPods(selector, opt)
 }

@@ -12,20 +12,31 @@ import (
 // also stops but will return the error.
 type ControllerWalker func(obj runtime.Object) (bool, error)
 
-func GetLabelSelector(obj runtime.Object) labels.Selector {
-	var selector labels.Selector
+func PodSelectorAsSet(obj runtime.Object) labels.Set {
+	var selector labels.Set
 	switch typ := obj.(type) {
 	case *corev1.Service:
-		selector = labels.SelectorFromValidatedSet(typ.Spec.Selector)
+		selector = typ.Spec.Selector
 	case *appsv1.Deployment:
-		selector, _ = metav1.LabelSelectorAsSelector(typ.Spec.Selector)
+		selector, _ = metav1.LabelSelectorAsMap(typ.Spec.Selector)
 	case *appsv1.StatefulSet:
-		selector, _ = metav1.LabelSelectorAsSelector(typ.Spec.Selector)
+		selector, _ = metav1.LabelSelectorAsMap(typ.Spec.Selector)
 	case *appsv1.ReplicaSet:
-		selector, _ = metav1.LabelSelectorAsSelector(typ.Spec.Selector)
+		selector, _ = metav1.LabelSelectorAsMap(typ.Spec.Selector)
 	case *appsv1.DaemonSet:
-		selector, _ = metav1.LabelSelectorAsSelector(typ.Spec.Selector)
+		selector, _ = metav1.LabelSelectorAsMap(typ.Spec.Selector)
+	case *corev1.Pod:
+		selector = typ.Labels
 	}
 
 	return selector
+}
+
+func PodSelectorAsSelector(obj runtime.Object) labels.Selector {
+	set := PodSelectorAsSet(obj)
+	if set != nil {
+		return labels.SelectorFromValidatedSet(set)
+	}
+
+	return labels.Nothing()
 }

@@ -1,4 +1,4 @@
-package service
+package kubeinformer
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/model"
 	"github.com/kage-cloud/kage/xds/pkg/model/envoyepctlr"
+	"github.com/kage-cloud/kage/xds/pkg/service"
 	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/kage-cloud/kage/xds/pkg/snap/store"
 	"github.com/kage-cloud/kage/xds/pkg/util"
@@ -34,12 +35,12 @@ type EnvoyEndpointController interface {
 }
 
 type envoyEndpointController struct {
-	EndpointFactory   factory.EndpointFactory `inject:"EndpointFactory"`
-	ListenerFactory   factory.ListenerFactory `inject:"ListenerFactory"`
-	StoreClient       snap.StoreClient        `inject:"StoreClient"`
-	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
-	WatchService      WatchService            `inject:"WatchService"`
-	LockdownService   ProxyService            `inject:"ProxyService"`
+	EndpointFactory   factory.EndpointFactory   `inject:"EndpointFactory"`
+	ListenerFactory   factory.ListenerFactory   `inject:"ListenerFactory"`
+	StoreClient       snap.StoreClient          `inject:"StoreClient"`
+	KubeReaderService service.KubeReaderService `inject:"KubeReaderService"`
+	WatchService      service.WatchService      `inject:"WatchService"`
+	LockdownService   service.ProxyService      `inject:"ProxyService"`
 }
 
 func (e *envoyEndpointController) StartAsync(ctx context.Context, spec *envoyepctlr.Spec) error {

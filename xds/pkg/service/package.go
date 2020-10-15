@@ -102,7 +102,7 @@ func (p *Package) Bindings() []axon.Binding {
 		axon.Bind(MeshConfigServiceKey).To().StructPtr(new(meshConfigService)),
 		axon.Bind(KageMeshServiceKey).To().StructPtr(new(kageMeshService)),
 		axon.Bind(KubeReaderServiceKey).To().StructPtr(new(kubeReaderService)),
-		axon.Bind(EnvoyEndpointsServiceKey).To().StructPtr(new(envoyEndpointsService)),
+		axon.Bind(CanaryEndpointsServiceKey).To().StructPtr(new(canaryEndpointsService)),
 		axon.Bind(ProxyServiceKey).To().StructPtr(new(proxyService)),
 		axon.Bind(KageServiceKey).To().Factory(kageServiceFactory).WithoutArgs(),
 		axon.Bind(KubeClientKey).To().Factory(kubeClientFactory).WithoutArgs(),

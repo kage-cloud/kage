@@ -16,11 +16,10 @@ func (m *MeshMarker) GetDomain() string {
 }
 
 type Xds struct {
-	Name            string            `json:"name"`
-	LabelSelector   map[string]string `json:"label_selector"`
-	Canary          Canary            `json:"canary"`
-	Config          XdsConfig         `json:"config"`
-	ProxiedServices map[string]bool   `json:"proxied_services"`
+	Name             string                       `json:"name"`
+	ServiceSelectors map[string]map[string]string `json:"service_selectors"`
+	Canary           Canary                       `json:"canary"`
+	Config           XdsConfig                    `json:"config"`
 }
 
 func (x *Xds) GetDomain() string {

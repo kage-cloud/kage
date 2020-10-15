@@ -77,7 +77,7 @@ func (c *collector) LabelSelectors() []labels.Selector {
 			selectors = append(selectors, labels.SelectorFromValidatedSet(v.Labels))
 			continue
 		}
-		ls := ktypes.GetLabelSelector(v)
+		ls := ktypes.PodSelectorAsSelector(v)
 		if ls != nil {
 			selectors = append(selectors, ls)
 		}

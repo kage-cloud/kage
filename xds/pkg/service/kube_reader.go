@@ -45,7 +45,7 @@ func (k *kubeReaderService) ListSelected(set labels.Set, kind ktypes.Kind, opt k
 		return nil, err
 	}
 
-	return kstream.StreamFromList(li).Filter(kfilter.SelectsSet(set)).ListInterface(), nil
+	return kstream.StreamFromList(li).Filter(kfilter.SelectsSet(set)).Collect().ListInterface(), nil
 }
 
 func (k *kubeReaderService) WalkControllers(obj metav1.Object, walker ktypes.ControllerWalker) error {

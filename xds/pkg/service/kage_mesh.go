@@ -1,47 +1,90 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/kage-cloud/kage/core/except"
 	"github.com/kage-cloud/kage/core/kube"
 	"github.com/kage-cloud/kage/core/kube/kconfig"
-	"github.com/kage-cloud/kage/core/kube/kinformer"
 	"github.com/kage-cloud/kage/core/kube/kstream"
 	"github.com/kage-cloud/kage/core/kube/ktypes"
 	"github.com/kage-cloud/kage/xds/pkg/factory"
 	"github.com/kage-cloud/kage/xds/pkg/meta"
+	"github.com/kage-cloud/kage/xds/pkg/snap"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apimachinery/pkg/runtime"
 	"strings"
-	"time"
 )
 
 const KageMeshServiceKey = "KageMeshService"
 
-var kageProxySelector = labels.SelectorFromValidatedSet(meta.ToMap(&meta.MeshMarker{IsMesh: true}))
+var KageProxySelector = labels.SelectorFromValidatedSet(meta.ToMap(&meta.MeshMarker{IsMesh: true}))
 
 type KageMeshService interface {
-	CreateFromCanary(canary *meta.Canary) (*meta.Xds, error)
+	CreateForCanary(canary *meta.Canary) (*meta.Xds, error)
+	FetchForCanary(canary *meta.Canary) (*meta.Xds, error)
+
+	MarshalXdsMeta(obj metav1.Object, xds *meta.Xds)
+	UnmarshalXdsMeta(obj metav1.Object) (*meta.Xds, error)
+	TargetsPod(xdsAnno *meta.Xds, pod *corev1.Pod) bool
+
 	Remove(xds *meta.Xds, opt kconfig.Opt) error
 	ListXdsForPod(pod *corev1.Pod) ([]meta.Xds, error)
-	Inform(ctx context.Context) error
+
+	// TODO: make sure to handle service removal from the service selector. should we sync all services??
 }
 
 type kageMeshService struct {
-	KubeClient            kube.Client             `inject:"KubeClient"`
-	KubeReaderService     KubeReaderService       `inject:"KubeReaderService"`
-	KageMeshFactory       factory.KageMeshFactory `inject:"KageMeshFactory"`
-	MeshConfigService     MeshConfigService       `inject:"MeshConfigService"`
-	EnvoyEndpointsService EnvoyEndpointsService   `inject:"EnvoyEndpointsService"`
-	InformerClient        kube.InformerClient     `inject:"InformerClient"`
-	CanaryService         CanaryService           `inject:"CanaryService"`
-	ProxyService          ProxyService            `inject:"ProxyService"`
+	KubeClient        kube.Client             `inject:"KubeClient"`
+	KubeReaderService KubeReaderService       `inject:"KubeReaderService"`
+	KageMeshFactory   factory.KageMeshFactory `inject:"KageMeshFactory"`
+	MeshConfigService MeshConfigService       `inject:"MeshConfigService"`
+	ProxyService      ProxyService            `inject:"ProxyService"`
+	StoreClient       snap.StoreClient        `inject:"StoreClient"`
+}
+
+func (k *kageMeshService) initServiceSelectors(ref meta.ObjRef) (map[string]map[string]string, error) {
+	obj, err := k.fetchObjRefObj(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	canaryMetaObj, ok := obj.(metav1.Object)
+	if !ok {
+		return nil, except.NewError("the canary object is not a valid kube meta object", except.ErrInvalid)
+	}
+
+	opt := kconfig.Opt{Namespace: canaryMetaObj.GetNamespace()}
+
+	svcObjs, err := k.KubeReaderService.ListSelected(canaryMetaObj.GetLabels(), ktypes.KindService, opt)
+	if err != nil {
+		return nil, err
+	}
+
+	svcSelectors := map[string]map[string]string{}
+	svcs := kstream.StreamFromList(svcObjs).Collect().Services()
+	for _, svc := range svcs.Items {
+		svcSelectors[svc.Name] = svc.Spec.Selector
+	}
+
+	return svcSelectors, nil
+}
+
+func (k *kageMeshService) FetchForCanary(canary *meta.Canary) (*meta.Xds, error) {
+	opt := kconfig.Opt{Namespace: canary.CanaryObj.Namespace}
+
+	name := k.genKageMeshName(&canary.SourceObj)
+	dep, err := k.KubeReaderService.GetDeploy(name, opt)
+	if err != nil {
+		return nil, err
+	}
+
+	return k.UnmarshalXdsMeta(dep)
 }
 
 func (k *kageMeshService) Remove(xds *meta.Xds, opt kconfig.Opt) error {
@@ -65,7 +108,7 @@ func (k *kageMeshService) Remove(xds *meta.Xds, opt kconfig.Opt) error {
 		}
 	}
 
-	return nil
+	return k.StoreClient.Delete(xds.Config.NodeId)
 }
 
 func (k *kageMeshService) ListXdsForPod(pod *corev1.Pod) ([]meta.Xds, error) {
@@ -78,45 +121,7 @@ func (k *kageMeshService) ListXdsForPod(pod *corev1.Pod) ([]meta.Xds, error) {
 	return k.listXdsAnnosForPod(meshes, pod)
 }
 
-func (k *kageMeshService) Inform(ctx context.Context) error {
-	informerSpec := kinformer.InformerSpec{
-		NamespaceKind: ktypes.NamespaceKind{Kind: ktypes.KindService},
-		BatchDuration: 5 * time.Second,
-		Handlers: []kinformer.InformEventHandler{
-			&kinformer.InformEventHandlerFuncs{
-				OnWatch: func(event watch.Event) error {
-					switch event.Type {
-					case watch.Added, watch.Modified:
-						if svc, ok := event.Object.(*corev1.Service); ok {
-							_ = k.addService(svc)
-						}
-					case watch.Deleted, watch.Error:
-					}
-					return nil
-				},
-				OnList: func(li metav1.ListInterface) error {
-					stream := kstream.StreamFromList(li)
-
-					for _, obj := range stream.Collect().Objects() {
-						svc, ok := obj.(*corev1.Service)
-						if !ok {
-							continue
-						}
-						if err := k.addService(svc); err != nil {
-							return err
-						}
-					}
-
-					return nil
-				},
-			},
-		},
-	}
-
-	return k.InformerClient.Inform(ctx, informerSpec)
-}
-
-func (k *kageMeshService) CreateFromCanary(canary *meta.Canary) (*meta.Xds, error) {
+func (k *kageMeshService) CreateForCanary(canary *meta.Canary) (*meta.Xds, error) {
 	kageMeshName := k.genKageMeshName(&canary.SourceObj)
 	opt := kconfig.Opt{Namespace: canary.SourceObj.Namespace}
 	kageMeshDeploy, err := k.KubeReaderService.GetDeploy(kageMeshName, opt)
@@ -127,7 +132,7 @@ func (k *kageMeshService) CreateFromCanary(canary *meta.Canary) (*meta.Xds, erro
 			return nil, err
 		}
 	} else {
-		xdsAnno, err = k.unmarshalXdsMeta(kageMeshDeploy)
+		xdsAnno, err = k.UnmarshalXdsMeta(kageMeshDeploy)
 		if err != nil {
 			return nil, err
 		}
@@ -143,6 +148,9 @@ func (k *kageMeshService) removeForService(svc *corev1.Service, opt kconfig.Opt)
 	}
 
 	if len(meshes.Items) <= 1 {
+		logrus.WithField("name", svc.Name).
+			WithField("namespace", svc.Namespace).
+			Info("Stopping all proxies for service.")
 		if err := k.ProxyService.ReleaseService(svc, opt); err != nil {
 			return err
 		}
@@ -152,18 +160,19 @@ func (k *kageMeshService) removeForService(svc *corev1.Service, opt kconfig.Opt)
 
 func (k *kageMeshService) listDeploysForProxiedService(svc *corev1.Service) (*appsv1.DeploymentList, error) {
 	opt := kconfig.Opt{Namespace: svc.Namespace}
-	meshes, err := k.KubeReaderService.List(kageProxySelector, ktypes.KindDeployment, opt)
+	meshes, err := k.KubeReaderService.List(KageProxySelector, ktypes.KindDeployment, opt)
 	if err != nil {
 		return nil, err
 	}
 
 	return kstream.StreamFromList(meshes).Filter(func(object metav1.Object) bool {
-		xdsAnno, err := k.unmarshalXdsMeta(object)
+		xdsAnno, err := k.UnmarshalXdsMeta(object)
 		if err != nil {
 			return false
 		}
 
-		return xdsAnno.ProxiedServices[svc.Name]
+		_, ok := xdsAnno.ServiceSelectors[svc.Name]
+		return ok
 	}).Collect().Deployments(), nil
 }
 
@@ -174,8 +183,8 @@ func (k *kageMeshService) listProxiedServicesForDeploy(dep *appsv1.Deployment) (
 		return nil, err
 	}
 
-	svcs := make([]corev1.Service, 0, len(xdsAnno.ProxiedServices))
-	for name := range xdsAnno.ProxiedServices {
+	svcs := make([]corev1.Service, 0, len(xdsAnno.ServiceSelectors))
+	for name := range xdsAnno.ServiceSelectors {
 		obj, err := k.KubeReaderService.Get(name, ktypes.KindService, opt)
 		if err != nil {
 			continue
@@ -188,7 +197,7 @@ func (k *kageMeshService) listProxiedServicesForDeploy(dep *appsv1.Deployment) (
 }
 
 func (k *kageMeshService) listMeshDeploys(opt kconfig.Opt) (*appsv1.DeploymentList, error) {
-	meshes, err := k.KubeReaderService.List(kageProxySelector, ktypes.KindDeployment, opt)
+	meshes, err := k.KubeReaderService.List(KageProxySelector, ktypes.KindDeployment, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -200,12 +209,12 @@ func (k *kageMeshService) listXdsAnnosForPod(meshes *appsv1.DeploymentList, pod 
 	xdsAnnos := make([]meta.Xds, 0, len(meshes.Items))
 
 	for _, v := range meshes.Items {
-		xdsAnno, err := k.unmarshalXdsMeta(&v)
+		xdsAnno, err := k.UnmarshalXdsMeta(&v)
 		if err != nil {
 			continue
 		}
 
-		if k.targetsPod(xdsAnno, pod) {
+		if k.TargetsPod(xdsAnno, pod) {
 			xdsAnnos = append(xdsAnnos, *xdsAnno)
 		}
 	}
@@ -213,92 +222,21 @@ func (k *kageMeshService) listXdsAnnosForPod(meshes *appsv1.DeploymentList, pod 
 	return xdsAnnos, nil
 }
 
-func (k *kageMeshService) targetsPod(xdsAnno *meta.Xds, pod *corev1.Pod) bool {
-	return xdsAnno.LabelSelector != nil && labels.SelectorFromValidatedSet(xdsAnno.LabelSelector).Matches(labels.Set(pod.Labels))
-}
+func (k *kageMeshService) TargetsPod(xdsAnno *meta.Xds, pod *corev1.Pod) bool {
+	podSet := labels.Set(pod.Labels)
 
-func (k *kageMeshService) listDeploysForPod(pod *corev1.Pod) (*appsv1.DeploymentList, error) {
-	opt := kconfig.Opt{Namespace: pod.Namespace}
-	depLi, err := k.KubeReaderService.List(kageProxySelector, ktypes.KindDeployment, opt)
-	if err != nil {
-		return nil, err
-	}
-
-	return kstream.StreamFromList(depLi).Filter(func(object metav1.Object) bool {
-		xdsAnno, err := k.unmarshalXdsMeta(object)
-		if err != nil {
-			return false
-		}
-		return k.targetsPod(xdsAnno, pod)
-	}).Collect().Deployments(), nil
-}
-
-func (k *kageMeshService) addService(svc *corev1.Service) error {
-	opt := kconfig.Opt{Namespace: svc.Namespace}
-	objs, err := k.KubeReaderService.List(labels.SelectorFromValidatedSet(svc.Spec.Selector), ktypes.KindPod, opt)
-	if err != nil {
-		return err
-	}
-
-	for _, obj := range kstream.StreamFromList(objs).Collect().Objects() {
-		pod, ok := obj.(*corev1.Pod)
-		if !ok {
-			continue
-		}
-
-		meshDeps, err := k.listDeploysForPod(pod)
-		if err != nil {
-			continue
-		}
-
-		for _, mesh := range meshDeps.Items {
-			canary := k.CanaryService.FetchForPod(pod)
-			controllerType := meta.SourceControllerType
-			if canary != nil {
-				controllerType = meta.CanaryControllerType
-			}
-
-			xdsAnno, err := k.unmarshalXdsMeta(&mesh)
-			if err != nil {
-				continue
-			}
-
-			logrus.WithField("name", svc.Name).
-				WithField("namespace", svc.Namespace).
-				Debug("Service routes to pod under a kage proxy.")
-			_ = k.EnvoyEndpointsService.StorePod(controllerType, xdsAnno, pod)
-
-			if xdsAnno.ProxiedServices == nil {
-				xdsAnno.ProxiedServices = map[string]bool{}
-			}
-
-			xdsAnno.ProxiedServices[svc.Name] = true
-
-			xdsAnno.LabelSelector = ktypes.UnionSet(xdsAnno.LabelSelector, svc.Spec.Selector)
-
-			if _, err := k.KubeClient.Update(&mesh, opt); err != nil {
-				logrus.WithError(err).
-					WithField("name", mesh.Name).
-					WithField("namespace", mesh.Namespace).
-					WithField("service", svc.Name).
-					Error("Failed to update mesh for service.")
-				continue
-			}
-
-			if err := k.ProxyService.ProxyService(svc, meta.ToMap(&xdsAnno.Config.XdsId)); err != nil {
-				return err
-			}
+	for _, v := range xdsAnno.ServiceSelectors {
+		if labels.SelectorFromValidatedSet(v).Matches(podSet) {
+			return true
 		}
 	}
-
-	return nil
+	return false
 }
 
 func (k *kageMeshService) createKageMeshDeploy(name string, canary *meta.Canary, opt kconfig.Opt) (*appsv1.Deployment, *meta.Xds, error) {
 	xdsAnno := &meta.Xds{
-		Name:          name,
-		LabelSelector: map[string]string{},
-		Canary:        *canary,
+		Name:   name,
+		Canary: *canary,
 		Config: meta.XdsConfig{
 			XdsId: meta.XdsId{NodeId: uuid.New().String()},
 			Canary: meta.EnvoyConfig{
@@ -309,6 +247,22 @@ func (k *kageMeshService) createKageMeshDeploy(name string, canary *meta.Canary,
 			},
 		},
 	}
+
+	sourceSvcSelectors, err := k.initServiceSelectors(canary.SourceObj)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	canarySvcSelectors, err := k.initServiceSelectors(canary.CanaryObj)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for k, v := range sourceSvcSelectors {
+		canarySvcSelectors[k] = v
+	}
+
+	xdsAnno.ServiceSelectors = canarySvcSelectors
 
 	baseline, err := k.MeshConfigService.FromXdsConfig(&xdsAnno.Config)
 	if err != nil {
@@ -330,12 +284,12 @@ func (k *kageMeshService) createKageMeshDeploy(name string, canary *meta.Canary,
 	return dep, xdsAnno, nil
 }
 
-func (k *kageMeshService) marshalXdsMeta(obj metav1.Object, xds *meta.Xds) {
+func (k *kageMeshService) MarshalXdsMeta(obj metav1.Object, xds *meta.Xds) {
 	obj.SetAnnotations(meta.Merge(obj.GetAnnotations(), xds))
 	obj.SetLabels(meta.Merge(obj.GetLabels(), &xds.Config.XdsId))
 }
 
-func (k *kageMeshService) unmarshalXdsMeta(obj metav1.Object) (*meta.Xds, error) {
+func (k *kageMeshService) UnmarshalXdsMeta(obj metav1.Object) (*meta.Xds, error) {
 	xdsAnno := new(meta.Xds)
 	if err := meta.FromMap(obj.GetAnnotations(), xdsAnno); err != nil {
 		return nil, err
@@ -346,6 +300,10 @@ func (k *kageMeshService) unmarshalXdsMeta(obj metav1.Object) (*meta.Xds, error)
 	}
 
 	return xdsAnno, nil
+}
+
+func (k *kageMeshService) fetchObjRefObj(o meta.ObjRef) (runtime.Object, error) {
+	return k.KubeReaderService.Get(o.Name, ktypes.Kind(o.Kind), kconfig.Opt{Namespace: o.Namespace})
 }
 
 func (k *kageMeshService) genKageMeshName(source *meta.ObjRef) string {

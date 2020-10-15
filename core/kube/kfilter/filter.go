@@ -51,7 +51,7 @@ func AnnotationSelectorFilter(selector labels.Selector) Filter {
 
 func SelectsSet(set labels.Set) Filter {
 	return func(object metav1.Object) bool {
-		selector := ktypes.GetLabelSelector(object.(runtime.Object))
+		selector := ktypes.PodSelectorAsSelector(object.(runtime.Object))
 		if selector == nil {
 			return false
 		}

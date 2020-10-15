@@ -1,4 +1,4 @@
-package kubecontroller
+package kubeinformer
 
 import "github.com/eddieowens/axon"
 
