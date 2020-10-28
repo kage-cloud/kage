@@ -19,6 +19,7 @@ type Opt struct {
 type Config interface {
 	// If the context is a blank string, the current config is returned.
 	Api(context string) (kubernetes.Interface, error)
+	RestConfig() *rest.Config
 	InCluster() bool
 	GetNamespace() string
 	Raw() *api.Config
@@ -34,6 +35,11 @@ type config struct {
 	Interface   kubernetes.Interface
 	IsInCluster bool
 	Namespace   string
+	Rest        *rest.Config
+}
+
+func (c *config) RestConfig() *rest.Config {
+	return c.Rest
 }
 
 func (c *config) GetNamespace() string {
@@ -94,6 +100,7 @@ func FromApiConfig(apiConf *api.Config) (Config, error) {
 	return &config{
 		Config:    apiConf,
 		Interface: inter,
+		Rest:      conf,
 	}, nil
 }
 
@@ -108,6 +115,10 @@ func NewConfigClient(spec ConfigSpec) (Config, error) {
 				return nil, err
 			}
 			confClient.Config = conf
+			confClient.Rest, err = kubeConf.ClientConfig()
+			if err != nil {
+				return nil, err
+			}
 			if spec.Namespace == "" {
 				spec.Namespace, _, err = kubeConf.Namespace()
 				if err != nil {
